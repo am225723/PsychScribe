@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Header } from './components/Header';
-import { Home } from './components/Home';
+import { Dashboard } from './components/Dashboard';
+import { DocumentWorkspace } from './components/DocumentWorkspace';
 import { Vault } from './components/Vault';
 import { Documentation } from './components/Documentation';
 import { SafetyProtocols } from './components/SafetyProtocols';
@@ -11,6 +12,7 @@ import { ProgressBar } from './components/ProgressBar';
 import { ChatBot } from './components/ChatBot';
 import { analyzeIntake } from './services/geminiService';
 import { FileData } from './types';
+import type { DocumentType } from './services/geminiService';
 
 export type Page = 'home' | 'vault' | 'docs' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view';
@@ -26,7 +28,6 @@ export interface ReportHistoryItem {
 
 const STORAGE_KEY = 'integrative_psych_history_v1';
 
-// Your Verified Client ID from Google Cloud Console
 const CLIENT_ID = "817289217448-m8t3lh9263b4mnu9cdsh4ki9kflgb0d0.apps.googleusercontent.com"; 
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
 const SCOPES = "https://www.googleapis.com/auth/drive.file";
@@ -45,6 +46,7 @@ declare global {
 
 const App: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeReportTab, setActiveReportTab] = useState<ReportTab>('clinical-report');
   const [isProcessing, setIsProcessing] = useState(false);
   const [report, setReport] = useState<string | null>(null);
@@ -53,7 +55,6 @@ const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // Google Drive State
   const [isDriveLinked, setIsDriveLinked] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [linkedEmail, setLinkedEmail] = useState<string | null>(null);
@@ -78,7 +79,6 @@ const App: React.FC = () => {
       }
     }
 
-    // Init Google Identity Services
     const initGis = () => {
       if (window.google && window.google.accounts) {
         try {
@@ -105,7 +105,6 @@ const App: React.FC = () => {
       }
     };
 
-    // Init Google API Client
     const initGapi = () => {
       if (window.gapi) {
         window.gapi.load('client', async () => {
@@ -120,7 +119,6 @@ const App: React.FC = () => {
       }
     };
 
-    // Retry logic for script loading
     const checkScripts = setInterval(() => {
       if (window.gapi && window.google?.accounts?.oauth2) {
         initGapi();
@@ -132,13 +130,20 @@ const App: React.FC = () => {
     return () => clearInterval(checkScripts);
   }, []);
 
+  useEffect(() => {
+    const workspaceRoutes = ['/summary', '/treatment', '/darp'];
+    if (workspaceRoutes.includes(location.pathname) && report) {
+      setReport(null);
+      setError(null);
+    }
+  }, [location.pathname]);
+
   const handleLinkDrive = () => {
     if (!tokenClient) {
       setError({ message: "Cloud sync library not yet ready. Please wait 2 seconds.", isQuota: false });
       return;
     }
     setIsLinking(true);
-    // requestAccessToken starts the popup flow
     tokenClient.requestAccessToken({ prompt: 'consent' });
   };
 
@@ -187,27 +192,28 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
-  const handleProcess = useCallback(async (input: string | FileData) => {
-    setIsProcessing(true);
-    setError(null);
-    
-    try {
-      const result = typeof input === 'string' 
-        ? await analyzeIntake(input)
-        : await analyzeIntake({ mimeType: input.mimeType, data: input.base64 });
+  const createProcessHandler = (docType: DocumentType) => {
+    return async (input: string | FileData) => {
+      setIsProcessing(true);
+      setError(null);
+      
+      try {
+        const result = typeof input === 'string' 
+          ? await analyzeIntake(input, docType)
+          : await analyzeIntake({ mimeType: input.mimeType, data: input.base64 }, docType);
 
-      setReport(result);
-      setActiveReportTab('clinical-report');
-      saveToHistory(result);
-      navigate('/');
-    } catch (err: any) {
-      const msg = err.message || "Synthesis failed. Please verify intake data quality.";
-      const isQuota = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Requested entity was not found');
-      setError({ message: msg, isQuota });
-    } finally {
-      setIsProcessing(false);
-    }
-  }, [history, navigate]);
+        setReport(result);
+        setActiveReportTab('clinical-report');
+        saveToHistory(result);
+      } catch (err: any) {
+        const msg = err.message || "Synthesis failed. Please verify intake data quality.";
+        const isQuota = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Requested entity was not found');
+        setError({ message: msg, isQuota });
+      } finally {
+        setIsProcessing(false);
+      }
+    };
+  };
 
   const handleReset = () => {
     setReport(null);
@@ -218,7 +224,7 @@ const App: React.FC = () => {
   const openPastReport = (item: ReportHistoryItem) => {
     setReport(item.content);
     setActiveReportTab('clinical-report');
-    navigate('/');
+    navigate('/summary');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -227,6 +233,20 @@ const App: React.FC = () => {
     const updated = history.filter(item => item.id !== id);
     setHistory(updated);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const workspaceProps = {
+    isProcessing,
+    hasApiKey,
+    onOpenKeySelector: handleOpenKeySelector,
+    isDriveLinked,
+    linkedEmail,
+    onLinkDrive: handleLinkDrive,
+    onUnlinkDrive: handleUnlinkDrive,
+    isLinking,
+    accessToken,
+    error,
+    activeReportTab,
   };
 
   return (
@@ -244,21 +264,29 @@ const App: React.FC = () => {
       
       <main className="flex-grow container mx-auto px-4 lg:px-10 py-12 relative">
         <Routes>
-          <Route path="/" element={
-            <Home
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/summary" element={
+            <DocumentWorkspace
+              documentType="summary"
               report={report}
-              isProcessing={isProcessing}
-              hasApiKey={hasApiKey}
-              onOpenKeySelector={handleOpenKeySelector}
-              isDriveLinked={isDriveLinked}
-              linkedEmail={linkedEmail}
-              onLinkDrive={handleLinkDrive}
-              onUnlinkDrive={handleUnlinkDrive}
-              isLinking={isLinking}
-              accessToken={accessToken}
-              onProcess={handleProcess}
-              error={error}
-              activeReportTab={activeReportTab}
+              onProcess={createProcessHandler('summary')}
+              {...workspaceProps}
+            />
+          } />
+          <Route path="/treatment" element={
+            <DocumentWorkspace
+              documentType="treatment"
+              report={report}
+              onProcess={createProcessHandler('treatment')}
+              {...workspaceProps}
+            />
+          } />
+          <Route path="/darp" element={
+            <DocumentWorkspace
+              documentType="darp"
+              report={report}
+              onProcess={createProcessHandler('darp')}
+              {...workspaceProps}
             />
           } />
           <Route path="/vault" element={

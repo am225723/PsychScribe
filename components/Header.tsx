@@ -66,6 +66,9 @@ export const Header: React.FC<HeaderProps> = ({
 
   const isCurrentPage = (page: Page) => {
     const path = getPath(page);
+    if (page === 'home') {
+      return location.pathname === '/' || location.pathname === '/summary' || location.pathname === '/treatment' || location.pathname === '/darp';
+    }
     return location.pathname === path;
   };
 
@@ -104,7 +107,6 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </header>
 
-      {/* FIXED BOTTOM NAV */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-teal-50 z-[100] flex justify-around items-center px-1 pb-6 pt-2 shadow-[0_-8px_25px_rgba(0,0,0,0.05)] h-20">
         {!reportActive ? (
           navItems.map((item) => {
