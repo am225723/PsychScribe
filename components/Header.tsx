@@ -71,34 +71,34 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="bg-white/80 backdrop-blur-md border-b border-teal-100 sticky top-0 z-[100] h-14 flex items-center shadow-sm">
+      <header className="bg-white/80 backdrop-blur-md border-b border-teal-100 sticky top-0 z-[100] h-14 md:h-28 flex items-center shadow-sm">
         <div className="container mx-auto px-4 flex items-center justify-between">
           <div 
-            className="flex items-center gap-2 cursor-pointer group" 
+            className="flex items-center gap-2 md:gap-4 cursor-pointer group"
             onClick={() => handleNavigate('home')}
           >
             <img 
               src={LOGO_URL} 
               alt="Dr. Zelisko Logo" 
-              className="h-8 w-auto object-contain transition-transform group-hover:scale-105" 
+              className="h-8 md:h-16 w-auto object-contain transition-transform group-hover:scale-105"
             />
             <div className="flex flex-col">
-              <h1 className="text-[9px] font-black text-teal-900 tracking-[0.05em] leading-none uppercase">Dr. Zelisko</h1>
-              <h2 className="text-[9px] font-black text-teal-700 tracking-[0.05em] leading-none uppercase mt-0.5">Integrative Psych</h2>
+              <h1 className="text-[9px] md:text-lg font-black text-teal-900 tracking-[0.05em] leading-none uppercase">Dr. Zelisko</h1>
+              <h2 className="text-[9px] md:text-lg font-black text-teal-700 tracking-[0.05em] leading-none uppercase mt-0.5 md:mt-1">Integrative Psych</h2>
             </div>
           </div>
           
           <div className="flex items-center gap-2">
              <button 
                onClick={onToggleChat}
-               className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all border-2 ${
+               className={`w-10 h-10 md:w-20 md:h-20 rounded-xl md:rounded-3xl flex items-center justify-center transition-all border-2 ${
                  isChatOpen 
                    ? 'bg-teal-800 text-white border-teal-800 shadow-xl' 
                    : 'bg-teal-50 text-teal-800 border-teal-100 hover:bg-teal-100 hover:shadow-lg'
                }`}
                aria-label="Toggle Dr. Zelisko AI Assistant"
              >
-               <i className={`fa-solid ${isChatOpen ? 'fa-xmark' : 'fa-comment-dots'} text-lg`}></i>
+               <i className={`fa-solid ${isChatOpen ? 'fa-xmark' : 'fa-comment-dots'} text-lg md:text-4xl`}></i>
              </button>
           </div>
         </div>
