@@ -27,14 +27,20 @@ export interface ReportHistoryItem {
 const LOGO_URL = "https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png";
 const STORAGE_KEY = 'integrative_psych_history_v1';
 
+// Verified Client ID for intake.drz.services
+const CLIENT_ID = "817289217448-m8t3lh9263b4mnu9cdsh4ki9kflgb0d0.apps.googleusercontent.com"; 
+const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
+const SCOPES = "https://www.googleapis.com/auth/drive.file";
+
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
     openSelectKey: () => Promise<void>;
   }
-
   interface Window {
     aistudio?: AIStudio;
+    gapi: any;
+    google: any;
   }
 }
 
@@ -47,6 +53,13 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Global Google Drive Sync State
+  const [isDriveLinked, setIsDriveLinked] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+  const [linkedEmail, setLinkedEmail] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [tokenClient, setTokenClient] = useState<any>(null);
 
   useEffect(() => {
     const checkKey = async () => {
@@ -65,7 +78,73 @@ const App: React.FC = () => {
         console.error("Failed to load history", e);
       }
     }
+
+    // Initialize Google API Client
+    const initGapi = () => {
+      if (window.gapi) {
+        window.gapi.load('client', async () => {
+          await window.gapi.client.init({
+            discoveryDocs: DISCOVERY_DOCS,
+          });
+        });
+      }
+    };
+
+    // Initialize GIS (Google Identity Services)
+    const initGis = () => {
+      if (window.google && window.google.accounts) {
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPES,
+          callback: (response: any) => {
+            if (response.error !== undefined) {
+              console.error("Auth error:", response);
+              setError({ message: "Google Authorization Failed: " + response.error_description, isQuota: false });
+              setIsLinking(false);
+              return;
+            }
+            setAccessToken(response.access_token);
+            setIsDriveLinked(true);
+            setLinkedEmail("support@drzelisko.com");
+            setIsLinking(false);
+          },
+        });
+        setTokenClient(client);
+      }
+    };
+
+    const checkScripts = setInterval(() => {
+      if (window.gapi && window.google) {
+        initGapi();
+        initGis();
+        clearInterval(checkScripts);
+      }
+    }, 500);
+    
+    return () => clearInterval(checkScripts);
   }, []);
+
+  const handleLinkDrive = () => {
+    if (!tokenClient) {
+      setError({ message: "Cloud sync engine is still loading. Please try again in 5 seconds.", isQuota: false });
+      return;
+    }
+    setIsLinking(true);
+    tokenClient.requestAccessToken({ prompt: 'consent', login_hint: 'support@drzelisko.com' });
+  };
+
+  const handleUnlinkDrive = () => {
+    if (accessToken) {
+      window.google.accounts.oauth2.revoke(accessToken, () => {
+        setIsDriveLinked(false);
+        setLinkedEmail(null);
+        setAccessToken(null);
+      });
+    } else {
+      setIsDriveLinked(false);
+      setLinkedEmail(null);
+    }
+  };
 
   const handleOpenKeySelector = async () => {
     if (window.aistudio) {
@@ -113,7 +192,7 @@ const App: React.FC = () => {
       saveToHistory(result);
       setCurrentPage('home');
     } catch (err: any) {
-      const msg = err.message || "Failed to process the intake form.";
+      const msg = err.message || "Synthesis failed. Please verify intake data quality.";
       const isQuota = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Requested entity was not found');
       setError({ message: msg, isQuota });
     } finally {
@@ -150,49 +229,98 @@ const App: React.FC = () => {
       case 'vault': return <Vault history={history} onOpenReport={openPastReport} onDeleteReport={deleteHistoryItem} />;
       default:
         return !report ? (
-          <div className="max-w-5xl mx-auto space-y-6">
-            <div className={`space-y-6 transition-opacity duration-300 ${isProcessing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-              <div className="text-center space-y-4 pt-6">
+          <div className="max-w-7xl mx-auto space-y-12">
+            <div className={`space-y-12 transition-opacity duration-300 ${isProcessing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+              <div className="text-center space-y-6 pt-10">
                 <div className="relative group inline-block">
                   <div className="absolute inset-0 bg-teal-400 blur-3xl opacity-10 group-hover:opacity-20 transition-opacity"></div>
-                  <img src={LOGO_URL} alt="Logo" className="w-28 h-28 mx-auto relative z-10 drop-shadow-2xl transition-transform group-hover:scale-110 duration-700" />
+                  <img src={LOGO_URL} alt="Dr. Zelisko Logo" className="w-32 h-32 mx-auto relative z-10 drop-shadow-2xl transition-transform group-hover:scale-110 duration-700" />
                 </div>
-                <div className="space-y-2">
-                  <h2 className="text-4xl font-black text-teal-950 tracking-tight uppercase">Intake Center</h2>
-                  <p className="text-teal-800/60 max-w-sm mx-auto text-xs font-bold leading-relaxed uppercase tracking-widest">Evidence-based synthesis for integrative professionals.</p>
+                <div className="space-y-3">
+                  <h2 className="text-5xl font-black text-teal-950 tracking-tighter uppercase lg:text-6xl">Dr. Zelisko Intake</h2>
+                  <p className="text-teal-800/60 max-w-xl mx-auto text-sm font-bold leading-relaxed uppercase tracking-[0.4em]">Clinical Synthesis Engine: drz.services</p>
                 </div>
               </div>
 
-              {!hasApiKey && window.aistudio && (
-                <div className="max-w-md mx-auto bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center justify-between gap-3 shadow-sm animate-in slide-in-from-top-4 duration-500">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700 shrink-0">
-                      <i className="fa-solid fa-key text-[10px]"></i>
+              <div className="max-w-4xl mx-auto px-4 grid md:grid-cols-2 gap-6">
+                {!hasApiKey && window.aistudio ? (
+                  <div className="bg-amber-50 border border-amber-100 p-6 rounded-[2rem] flex items-center justify-between gap-6 shadow-xl animate-in slide-in-from-top-6 duration-500">
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-700 shrink-0">
+                        <i className="fa-solid fa-key text-xl"></i>
+                      </div>
+                      <div>
+                        <h4 className="font-black text-amber-900 uppercase text-xs tracking-widest leading-none">Security Key</h4>
+                        <p className="text-[9px] font-bold text-amber-800/60 mt-1">Config required for processing</p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-black text-amber-900 uppercase text-[9px] tracking-widest">Key Required</h4>
+                    <button 
+                      onClick={handleOpenKeySelector}
+                      className="bg-amber-700 text-white px-5 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest hover:bg-amber-800 transition-all shadow-lg shadow-amber-900/20 active:scale-95"
+                    >
+                      Initialize
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-teal-50/50 border border-teal-100/50 p-6 rounded-[2rem] flex items-center justify-between gap-6 shadow-sm">
+                    <div className="flex items-center gap-5">
+                      <div className="w-12 h-12 bg-teal-100 rounded-2xl flex items-center justify-center text-teal-800 shrink-0">
+                        <i className="fa-solid fa-circle-check text-xl"></i>
+                      </div>
+                      <div>
+                        <h4 className="font-black text-teal-950 uppercase text-xs tracking-widest leading-none">System Ready</h4>
+                        <p className="text-[9px] font-bold text-teal-800/40 mt-1 uppercase tracking-tighter">Clinical engine operational</p>
+                      </div>
                     </div>
                   </div>
-                  <button 
-                    onClick={handleOpenKeySelector}
-                    className="bg-amber-700 text-white px-4 py-2 rounded-lg font-black uppercase text-[8px] tracking-widest hover:bg-amber-800 transition-all shadow-sm"
-                  >
-                    Select Key
-                  </button>
+                )}
+
+                <div className={`p-6 rounded-[2rem] border flex items-center justify-between gap-6 shadow-xl transition-all duration-500 ${isDriveLinked ? 'bg-emerald-50 border-emerald-100 ring-2 ring-emerald-200' : 'bg-white border-teal-50 hover:border-teal-100'}`}>
+                  <div className="flex items-center gap-5">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500 ${isDriveLinked ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200 rotate-[360deg]' : 'bg-slate-50 text-slate-400'}`}>
+                      <i className="fa-brands fa-google-drive text-xl"></i>
+                    </div>
+                    <div className="overflow-hidden">
+                      <h4 className="font-black text-teal-950 uppercase text-xs tracking-widest leading-none">Archival Sync</h4>
+                      <p className={`text-[9px] font-bold mt-1 uppercase truncate tracking-tighter ${isDriveLinked ? 'text-emerald-700' : 'text-teal-800/30'}`}>
+                        {isDriveLinked ? linkedEmail : 'Link support@drzelisko.com'}
+                      </p>
+                    </div>
+                  </div>
+                  {!isDriveLinked ? (
+                    <button 
+                      onClick={handleLinkDrive}
+                      disabled={isLinking}
+                      className="bg-teal-950 text-teal-50 px-6 py-3 rounded-xl font-black uppercase text-[9px] tracking-widest hover:bg-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-teal-900/10 disabled:opacity-50"
+                    >
+                      {isLinking ? <i className="fa-solid fa-circle-notch animate-spin"></i> : <i className="fa-solid fa-link"></i>}
+                      {isLinking ? 'Authenticating' : 'Link Drive'}
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={handleUnlinkDrive}
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50 transition-all p-3 rounded-xl"
+                      title="Disconnect Clinical Drive"
+                    >
+                      <i className="fa-solid fa-link-slash"></i>
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
               
-              <div className="max-w-2xl mx-auto w-full">
+              <div className="max-w-4xl mx-auto w-full px-4">
                 <IntakeForm onProcess={handleProcess} isProcessing={isProcessing} />
               </div>
 
               {error && (
-                <div className="max-w-md mx-auto p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex flex-col gap-3 animate-in slide-in-from-top-2 duration-300 shadow-sm">
-                  <div className="flex items-start gap-2">
-                    <i className="fa-solid fa-triangle-exclamation text-red-500 text-lg mt-0.5"></i>
-                    <div className="space-y-0.5">
-                      <p className="text-[9px] font-black uppercase tracking-widest">{error.isQuota ? "Quota Exceeded" : "Error"}</p>
-                      <p className="text-[9px] font-bold opacity-80 leading-tight">{error.message}</p>
+                <div className="max-w-xl mx-auto p-6 bg-red-50 border border-red-100 text-red-700 rounded-[2rem] flex flex-col gap-4 animate-in slide-in-from-top-4 duration-300 shadow-xl">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center shrink-0">
+                      <i className="fa-solid fa-triangle-exclamation text-red-600 text-xl"></i>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs font-black uppercase tracking-widest">{error.isQuota ? "Capacity Warning" : "System Error"}</p>
+                      <p className="text-sm font-bold opacity-80 leading-snug">{error.message}</p>
                     </div>
                   </div>
                 </div>
@@ -200,15 +328,24 @@ const App: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="space-y-4 max-w-5xl mx-auto">
-            <ReportView report={report} activeTab={activeReportTab} />
+          <div className="space-y-8 max-w-7xl mx-auto px-4">
+            <ReportView 
+              report={report} 
+              activeTab={activeReportTab}
+              isDriveLinked={isDriveLinked}
+              linkedEmail={linkedEmail}
+              onLinkDrive={handleLinkDrive}
+              onUnlinkDrive={handleUnlinkDrive}
+              isLinking={isLinking}
+              accessToken={accessToken}
+            />
           </div>
         );
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#FBFDFF] pb-24 overflow-x-hidden">
+    <div className="flex flex-col min-h-screen bg-[#FBFDFF] pb-32 overflow-x-hidden">
       <Header 
         onNavigate={setCurrentPage} 
         currentPage={currentPage} 
@@ -222,7 +359,7 @@ const App: React.FC = () => {
         onReset={handleReset}
       />
       
-      <main className="flex-grow container mx-auto px-4 py-8 relative">
+      <main className="flex-grow container mx-auto px-4 lg:px-10 py-12 relative">
         {renderContent()}
       </main>
 

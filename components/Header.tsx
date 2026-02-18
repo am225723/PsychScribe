@@ -60,12 +60,12 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <img 
               src={LOGO_URL} 
-              alt="Logo" 
+              alt="Dr. Zelisko Logo" 
               className="h-8 w-auto object-contain transition-transform group-hover:scale-105" 
             />
             <div className="flex flex-col">
-              <h1 className="text-[9px] font-black text-teal-900 tracking-[0.05em] leading-none uppercase">Integrative</h1>
-              <h2 className="text-[9px] font-black text-teal-700 tracking-[0.05em] leading-none uppercase mt-0.5">Psychiatry</h2>
+              <h1 className="text-[9px] font-black text-teal-900 tracking-[0.05em] leading-none uppercase">Dr. Zelisko</h1>
+              <h2 className="text-[9px] font-black text-teal-700 tracking-[0.05em] leading-none uppercase mt-0.5">Integrative Psych</h2>
             </div>
           </div>
           
@@ -77,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
                    ? 'bg-teal-800 text-white border-teal-800 shadow-xl' 
                    : 'bg-teal-50 text-teal-800 border-teal-100 hover:bg-teal-100 hover:shadow-lg'
                }`}
-               aria-label="Toggle Assistant"
+               aria-label="Toggle Dr. Zelisko AI Assistant"
              >
                <i className={`fa-solid ${isChatOpen ? 'fa-xmark' : 'fa-comment-dots'} text-lg`}></i>
              </button>
@@ -85,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </header>
 
-      {/* FIXED BOTTOM NAV ON ALL SCREENS */}
+      {/* FIXED BOTTOM NAV */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-teal-50 z-[100] flex justify-around items-center px-1 pb-6 pt-2 shadow-[0_-8px_25px_rgba(0,0,0,0.05)] h-20">
         {!reportActive ? (
           navItems.map((item) => {
