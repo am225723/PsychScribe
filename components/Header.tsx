@@ -1,9 +1,8 @@
 import React from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Page, ReportHistoryItem, ReportTab } from '../App';
 
 interface HeaderProps {
-  onNavigate: (page: Page) => void;
-  currentPage: Page;
   history?: ReportHistoryItem[];
   onSelectHistoryItem?: (item: ReportHistoryItem) => void;
   onToggleChat: () => void;
@@ -17,8 +16,6 @@ interface HeaderProps {
 const LOGO_URL = "https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png";
 
 export const Header: React.FC<HeaderProps> = ({ 
-  onNavigate, 
-  currentPage, 
   onToggleChat, 
   isChatOpen,
   reportActive,
@@ -26,6 +23,21 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectReportTab,
   onReset
 }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const getPath = (page: Page): string => {
+    switch (page) {
+      case 'home': return '/';
+      case 'vault': return '/vault';
+      case 'docs': return '/docs';
+      case 'safety': return '/safety';
+      case 'hipaa': return '/hipaa';
+      case 'support': return '/support';
+      default: return '/';
+    }
+  };
+
   const navItems: { label: string; icon: string; page: Page; color?: string }[] = [
     { label: 'Home', icon: 'fa-house', page: 'home' },
     { label: 'Vault', icon: 'fa-box-archive', page: 'vault' }, 
@@ -42,12 +54,19 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   const handleNavigate = (page: Page) => {
+    const path = getPath(page);
     if (reportActive && page === 'home') {
       onReset();
+      navigate('/');
     } else {
-      onNavigate(page);
+      navigate(path);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const isCurrentPage = (page: Page) => {
+    const path = getPath(page);
+    return location.pathname === path;
   };
 
   return (
@@ -89,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-teal-50 z-[100] flex justify-around items-center px-1 pb-6 pt-2 shadow-[0_-8px_25px_rgba(0,0,0,0.05)] h-20">
         {!reportActive ? (
           navItems.map((item) => {
-            const isActive = currentPage === item.page;
+            const isActive = isCurrentPage(item.page);
             return (
               <button
                 key={item.label}
@@ -116,7 +135,14 @@ export const Header: React.FC<HeaderProps> = ({
             return (
               <button
                 key={item.label}
-                onClick={() => isHome ? onReset() : onSelectReportTab(item.tab)}
+                onClick={() => {
+                   if (isHome) {
+                     onReset();
+                     navigate('/');
+                   } else {
+                     onSelectReportTab(item.tab);
+                   }
+                }}
                 className={`flex flex-col items-center gap-1 min-w-[56px] transition-all ${
                   isActive ? 'text-teal-800' : 'text-slate-300'
                 }`}
