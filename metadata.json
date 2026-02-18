@@ -1,0 +1,7 @@
+{
+  "name": "PsychScribe AI",
+  "description": "An expert psychiatric medical scribe application that analyzes intake forms to generate structured clinical briefs with high-priority safety screening and Python-based PDF generation logic.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
