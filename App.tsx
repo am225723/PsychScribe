@@ -27,7 +27,7 @@ export interface ReportHistoryItem {
 const LOGO_URL = "https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png";
 const STORAGE_KEY = 'integrative_psych_history_v1';
 
-// Verified Client ID for intake.drz.services
+// Your Verified Client ID from Google Cloud Console
 const CLIENT_ID = "817289217448-m8t3lh9263b4mnu9cdsh4ki9kflgb0d0.apps.googleusercontent.com"; 
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
 const SCOPES = "https://www.googleapis.com/auth/drive.file";
@@ -54,7 +54,7 @@ const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  // Global Google Drive Sync State
+  // Google Drive State
   const [isDriveLinked, setIsDriveLinked] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
   const [linkedEmail, setLinkedEmail] = useState<string | null>(null);
@@ -79,42 +79,51 @@ const App: React.FC = () => {
       }
     }
 
-    // Initialize Google API Client
+    // Init Google Identity Services
+    const initGis = () => {
+      if (window.google && window.google.accounts) {
+        try {
+          const client = window.google.accounts.oauth2.initTokenClient({
+            client_id: CLIENT_ID,
+            scope: SCOPES,
+            callback: (response: any) => {
+              if (response.error !== undefined) {
+                console.error("Auth error:", response);
+                setError({ message: "Authentication Error: " + (response.error_description || "Request denied."), isQuota: false });
+                setIsLinking(false);
+                return;
+              }
+              setAccessToken(response.access_token);
+              setIsDriveLinked(true);
+              setLinkedEmail("support@drzelisko.com");
+              setIsLinking(false);
+            },
+          });
+          setTokenClient(client);
+        } catch (err) {
+          console.error("GIS initialization failed", err);
+        }
+      }
+    };
+
+    // Init Google API Client
     const initGapi = () => {
       if (window.gapi) {
         window.gapi.load('client', async () => {
-          await window.gapi.client.init({
-            discoveryDocs: DISCOVERY_DOCS,
-          });
+          try {
+            await window.gapi.client.init({
+              discoveryDocs: DISCOVERY_DOCS,
+            });
+          } catch (err) {
+            console.error("GAPI initialization failed", err);
+          }
         });
       }
     };
 
-    // Initialize GIS (Google Identity Services)
-    const initGis = () => {
-      if (window.google && window.google.accounts) {
-        const client = window.google.accounts.oauth2.initTokenClient({
-          client_id: CLIENT_ID,
-          scope: SCOPES,
-          callback: (response: any) => {
-            if (response.error !== undefined) {
-              console.error("Auth error:", response);
-              setError({ message: "Google Authorization Failed: " + response.error_description, isQuota: false });
-              setIsLinking(false);
-              return;
-            }
-            setAccessToken(response.access_token);
-            setIsDriveLinked(true);
-            setLinkedEmail("support@drzelisko.com");
-            setIsLinking(false);
-          },
-        });
-        setTokenClient(client);
-      }
-    };
-
+    // Retry logic for script loading
     const checkScripts = setInterval(() => {
-      if (window.gapi && window.google) {
+      if (window.gapi && window.google?.accounts?.oauth2) {
         initGapi();
         initGis();
         clearInterval(checkScripts);
@@ -126,11 +135,12 @@ const App: React.FC = () => {
 
   const handleLinkDrive = () => {
     if (!tokenClient) {
-      setError({ message: "Cloud sync engine is still loading. Please try again in 5 seconds.", isQuota: false });
+      setError({ message: "Cloud sync library not yet ready. Please wait 2 seconds.", isQuota: false });
       return;
     }
     setIsLinking(true);
-    tokenClient.requestAccessToken({ prompt: 'consent', login_hint: 'support@drzelisko.com' });
+    // requestAccessToken starts the popup flow
+    tokenClient.requestAccessToken({ prompt: 'consent' });
   };
 
   const handleUnlinkDrive = () => {
@@ -283,7 +293,7 @@ const App: React.FC = () => {
                     <div className="overflow-hidden">
                       <h4 className="font-black text-teal-950 uppercase text-xs tracking-widest leading-none">Archival Sync</h4>
                       <p className={`text-[9px] font-bold mt-1 uppercase truncate tracking-tighter ${isDriveLinked ? 'text-emerald-700' : 'text-teal-800/30'}`}>
-                        {isDriveLinked ? linkedEmail : 'Link support@drzelisko.com'}
+                        {isDriveLinked ? linkedEmail : 'Link Google Drive'}
                       </p>
                     </div>
                   </div>
@@ -300,7 +310,7 @@ const App: React.FC = () => {
                     <button 
                       onClick={handleUnlinkDrive}
                       className="text-red-400 hover:text-red-600 hover:bg-red-50 transition-all p-3 rounded-xl"
-                      title="Disconnect Clinical Drive"
+                      title="Disconnect Drive"
                     >
                       <i className="fa-solid fa-link-slash"></i>
                     </button>
