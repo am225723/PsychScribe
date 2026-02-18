@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { Header } from './components/Header';
 import { IntakeForm } from './components/IntakeForm';
@@ -151,21 +150,21 @@ const App: React.FC = () => {
       case 'vault': return <Vault history={history} onOpenReport={openPastReport} onDeleteReport={deleteHistoryItem} />;
       default:
         return !report ? (
-          <div className="max-w-4xl mx-auto space-y-6 md:space-y-10">
-            <div className={`space-y-6 md:space-y-8 transition-opacity duration-300 ${isProcessing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-              <div className="text-center space-y-4 pt-6 md:pt-10">
+          <div className="max-w-5xl mx-auto space-y-6">
+            <div className={`space-y-6 transition-opacity duration-300 ${isProcessing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+              <div className="text-center space-y-4 pt-6">
                 <div className="relative group inline-block">
                   <div className="absolute inset-0 bg-teal-400 blur-3xl opacity-10 group-hover:opacity-20 transition-opacity"></div>
-                  <img src={LOGO_URL} alt="Logo" className="w-28 h-28 md:w-36 md:h-36 mx-auto relative z-10 drop-shadow-2xl transition-transform group-hover:scale-110 duration-700" />
+                  <img src={LOGO_URL} alt="Logo" className="w-28 h-28 mx-auto relative z-10 drop-shadow-2xl transition-transform group-hover:scale-110 duration-700" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-3xl md:text-5xl font-black text-teal-950 tracking-tight uppercase">Intake Center</h2>
-                  <p className="text-teal-800/60 max-w-md mx-auto text-xs md:text-sm font-bold leading-relaxed">Evidence-based synthesis for professionals.</p>
+                  <h2 className="text-4xl font-black text-teal-950 tracking-tight uppercase">Intake Center</h2>
+                  <p className="text-teal-800/60 max-w-sm mx-auto text-xs font-bold leading-relaxed uppercase tracking-widest">Evidence-based synthesis for integrative professionals.</p>
                 </div>
               </div>
 
               {!hasApiKey && window.aistudio && (
-                <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center justify-between gap-3 shadow-sm animate-in slide-in-from-top-4 duration-500">
+                <div className="max-w-md mx-auto bg-amber-50 border border-amber-100 p-4 rounded-2xl flex items-center justify-between gap-3 shadow-sm animate-in slide-in-from-top-4 duration-500">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center text-amber-700 shrink-0">
                       <i className="fa-solid fa-key text-[10px]"></i>
@@ -183,10 +182,12 @@ const App: React.FC = () => {
                 </div>
               )}
               
-              <IntakeForm onProcess={handleProcess} isProcessing={isProcessing} />
+              <div className="max-w-2xl mx-auto w-full">
+                <IntakeForm onProcess={handleProcess} isProcessing={isProcessing} />
+              </div>
 
               {error && (
-                <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex flex-col gap-3 animate-in slide-in-from-top-2 duration-300 shadow-sm">
+                <div className="max-w-md mx-auto p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex flex-col gap-3 animate-in slide-in-from-top-2 duration-300 shadow-sm">
                   <div className="flex items-start gap-2">
                     <i className="fa-solid fa-triangle-exclamation text-red-500 text-lg mt-0.5"></i>
                     <div className="space-y-0.5">
@@ -199,7 +200,7 @@ const App: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 max-w-5xl mx-auto">
             <ReportView report={report} activeTab={activeReportTab} />
           </div>
         );
@@ -207,7 +208,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#FBFDFF] pb-24 lg:pb-0 overflow-x-hidden">
+    <div className="flex flex-col min-h-screen bg-[#FBFDFF] pb-24 overflow-x-hidden">
       <Header 
         onNavigate={setCurrentPage} 
         currentPage={currentPage} 
@@ -221,26 +222,12 @@ const App: React.FC = () => {
         onReset={handleReset}
       />
       
-      <main className="flex-grow container mx-auto px-4 py-6 md:py-16 max-w-5xl relative">
+      <main className="flex-grow container mx-auto px-4 py-8 relative">
         {renderContent()}
       </main>
 
       <ProgressBar isProcessing={isProcessing} />
       <ChatBot isOpen={isChatOpen} setIsOpen={setIsChatOpen} />
-
-      <footer className="hidden lg:block bg-white border-t border-teal-50 py-10">
-        <div className="container mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6 text-[9px] font-black uppercase tracking-[0.2em] text-teal-900/40">
-          <div className="flex items-center gap-3">
-             <img src={LOGO_URL} className="w-6 h-6 opacity-30 grayscale" alt="Logo" />
-             <p>© 2026 Integrative Psychiatry.</p>
-          </div>
-          <div className="flex gap-8">
-            <button onClick={() => setCurrentPage('safety')} className="hover:text-teal-900">Safety</button>
-            <button onClick={() => setCurrentPage('hipaa')} className="hover:text-teal-900">HIPAA</button>
-            <button onClick={() => setCurrentPage('support')} className="hover:text-teal-900">Support</button>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };

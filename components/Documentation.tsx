@@ -1,76 +1,75 @@
-
 import React from 'react';
 
 export const Documentation: React.FC = () => {
   return (
-    <div className="max-w-4xl mx-auto space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-teal-50 text-teal-800 rounded-full text-[9px] font-black uppercase tracking-[0.2em] mb-1 border border-teal-100">
+    <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="text-center space-y-4">
+        <div className="inline-flex items-center gap-3 px-6 py-2 bg-teal-50 text-teal-800 rounded-full text-[10px] font-black uppercase tracking-[0.3em] mb-2 border border-teal-100">
           <i className="fa-solid fa-book-open-reader"></i>
-          System Guidelines
+          Clinical Engine Protocol
         </div>
-        <h2 className="text-2xl md:text-3xl font-black text-teal-950 tracking-tight uppercase">Integrative Documentation</h2>
-        <p className="text-teal-800/60 text-xs md:text-sm font-bold">Understanding the Clinical Synthesis Engine.</p>
+        <h2 className="text-5xl font-black text-teal-950 tracking-tighter uppercase">System Documentation</h2>
+        <p className="text-teal-800/60 text-lg font-bold tracking-tight">Framework and logic for the Clinical Synthesis Engine.</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-        <div className="bg-white p-6 md:p-10 rounded-[2rem] border border-teal-50 shadow-xl shadow-teal-900/5 space-y-6 group hover:border-teal-200 transition-colors">
-          <div className="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center text-teal-800 transition-transform group-hover:scale-110">
-            <i className="fa-solid fa-microscope text-2xl"></i>
+      <div className="grid md:grid-cols-2 gap-8">
+        <div className="bg-white p-10 rounded-[3rem] border border-teal-50 shadow-2xl space-y-8 group hover:border-teal-200 transition-all">
+          <div className="w-16 h-16 bg-teal-50 rounded-2xl flex items-center justify-center text-teal-800 transition-transform group-hover:scale-110 shadow-inner">
+            <i className="fa-solid fa-microscope text-3xl"></i>
           </div>
-          <div className="space-y-2">
-            <h3 className="text-lg font-black text-teal-900 uppercase tracking-tight">Clinical Synthesis</h3>
-            <p className="text-teal-800/60 leading-relaxed font-bold text-xs">
-              Holistic engine scans verbatim intake text and PDF documents to identify key psychiatric markers across HPI and wellness domains.
+          <div className="space-y-4">
+            <h3 className="text-2xl font-black text-teal-900 uppercase tracking-tighter">Clinical Synthesis</h3>
+            <p className="text-teal-800/60 leading-relaxed font-bold text-base">
+              Our holistic engine scans intake text and high-resolution PDF documents to identify critical psychiatric markers across all clinical domains.
             </p>
           </div>
-          <ul className="space-y-3 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">
-            <li className="flex items-center gap-2"><i className="fa-solid fa-circle-check text-emerald-600"></i> OCR-Ready Scanning</li>
-            <li className="flex items-center gap-2"><i className="fa-solid fa-circle-check text-emerald-600"></i> Symptom Interpretation</li>
-            <li className="flex items-center gap-2"><i className="fa-solid fa-circle-check text-emerald-600"></i> Narrative Consistency</li>
+          <ul className="space-y-4 text-xs font-black uppercase tracking-[0.3em] text-teal-800/40">
+            <li className="flex items-center gap-4"><i className="fa-solid fa-circle-check text-emerald-600"></i> OCR-Ready Document Scanning</li>
+            <li className="flex items-center gap-4"><i className="fa-solid fa-circle-check text-emerald-600"></i> Advanced Symptom Interpretation</li>
+            <li className="flex items-center gap-4"><i className="fa-solid fa-circle-check text-emerald-600"></i> Longitudinal Narrative Continuity</li>
           </ul>
         </div>
 
-        <div className="bg-white p-6 md:p-10 rounded-[2rem] border border-teal-50 shadow-xl shadow-teal-900/5 space-y-6 group hover:border-teal-200 transition-colors">
-          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-800 transition-transform group-hover:scale-110">
-            <i className="fa-solid fa-cloud-arrow-up text-2xl"></i>
+        <div className="bg-white p-10 rounded-[3rem] border border-teal-50 shadow-2xl space-y-8 group hover:border-teal-200 transition-all">
+          <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-700 transition-transform group-hover:scale-110 shadow-inner">
+            <i className="fa-solid fa-cloud-arrow-up text-3xl"></i>
           </div>
-          <div className="space-y-2">
-            <h3 className="text-lg font-black text-teal-900 uppercase tracking-tight">Integration</h3>
-            <p className="text-teal-800/60 leading-relaxed font-bold text-xs">
-              Synchronization with clinical folders. Securely import medical scans and export finalized briefs directly into records.
+          <div className="space-y-4">
+            <h3 className="text-2xl font-black text-teal-900 uppercase tracking-tighter">Integrative Sync</h3>
+            <p className="text-teal-800/60 leading-relaxed font-bold text-base">
+              Secure synchronization with private medical repositories. Export finalized clinical briefs directly into patient EMR records.
             </p>
           </div>
-          <ul className="space-y-3 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">
-            <li className="flex items-center gap-2"><i className="fa-solid fa-circle-check text-emerald-600"></i> Secure Handshake</li>
-            <li className="flex items-center gap-2"><i className="fa-solid fa-circle-check text-emerald-600"></i> Automated Export</li>
-            <li className="flex items-center gap-2"><i className="fa-solid fa-circle-check text-emerald-600"></i> HIPAA Encryption</li>
+          <ul className="space-y-4 text-xs font-black uppercase tracking-[0.3em] text-teal-800/40">
+            <li className="flex items-center gap-4"><i className="fa-solid fa-circle-check text-emerald-600"></i> Personal Drive Linkage</li>
+            <li className="flex items-center gap-4"><i className="fa-solid fa-circle-check text-emerald-600"></i> Zero-Persistence PDF Export</li>
+            <li className="flex items-center gap-4"><i className="fa-solid fa-circle-check text-emerald-600"></i> AES-256 Cloud Encryption</li>
           </ul>
         </div>
       </div>
 
-      <div className="bg-teal-900 text-white p-8 md:p-12 rounded-[2.5rem] shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-400/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
-        <div className="relative z-10 space-y-8">
-          <div className="space-y-1">
-            <h3 className="text-xl font-black uppercase tracking-tighter">Clinical Workflow</h3>
-            <p className="text-teal-400 font-black uppercase tracking-[0.3em] text-[8px]">Standard Processing</p>
+      <div className="bg-teal-950 text-white p-16 rounded-[4rem] shadow-2xl relative overflow-hidden ring-1 ring-white/10">
+        <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-400/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-[100px]"></div>
+        <div className="relative z-10 space-y-12">
+          <div className="space-y-2">
+            <h3 className="text-4xl font-black uppercase tracking-tighter">Medical Informatics Workflow</h3>
+            <p className="text-teal-400 font-black uppercase tracking-[0.5em] text-xs">Standard Processing Protocol</p>
           </div>
-          <div className="grid md:grid-cols-3 gap-6 pt-2">
-            <div className="space-y-2">
-              <div className="text-emerald-400 font-black text-2xl opacity-50">01</div>
-              <h4 className="font-black uppercase text-[10px] tracking-widest">Ingestion</h4>
-              <p className="text-teal-100/60 text-[10px] font-bold leading-relaxed">Upload medical scans, PDFs, or verbatim notes.</p>
+          <div className="grid md:grid-cols-3 gap-12 pt-4">
+            <div className="space-y-4">
+              <div className="text-emerald-400 font-black text-5xl opacity-50 tracking-tighter">01</div>
+              <h4 className="font-black uppercase text-sm tracking-[0.2em]">Data Ingestion</h4>
+              <p className="text-teal-100/60 text-sm font-bold leading-relaxed">System consumes medical scans, legacy PDFs, or raw clinical observation notes.</p>
             </div>
-            <div className="space-y-2">
-              <div className="text-emerald-400 font-black text-2xl opacity-50">02</div>
-              <h4 className="font-black uppercase text-[10px] tracking-widest">Reasoning</h4>
-              <p className="text-teal-100/60 text-[10px] font-bold leading-relaxed">AI analyzes history and screens for safety markers.</p>
+            <div className="space-y-4">
+              <div className="text-emerald-400 font-black text-5xl opacity-50 tracking-tighter">02</div>
+              <h4 className="font-black uppercase text-sm tracking-[0.2em]">Marker Reasoning</h4>
+              <p className="text-teal-100/60 text-sm font-bold leading-relaxed">AI evaluates history and proactively screens for high-priority safety markers.</p>
             </div>
-            <div className="space-y-2">
-              <div className="text-emerald-400 font-black text-2xl opacity-50">03</div>
-              <h4 className="font-black uppercase text-[10px] tracking-widest">Archival</h4>
-              <p className="text-teal-100/60 text-[10px] font-bold leading-relaxed">Download PDF or sync to clinical cloud.</p>
+            <div className="space-y-4">
+              <div className="text-emerald-400 font-black text-5xl opacity-50 tracking-tighter">03</div>
+              <h4 className="font-black uppercase text-sm tracking-[0.2em]">Clinical Archival</h4>
+              <p className="text-teal-100/60 text-sm font-bold leading-relaxed">Finalized synthesis is generated as a secure PDF and linked to your cloud.</p>
             </div>
           </div>
         </div>

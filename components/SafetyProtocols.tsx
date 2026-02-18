@@ -1,73 +1,74 @@
-
 import React from 'react';
 
 export const SafetyProtocols: React.FC = () => {
   return (
-    <div className="max-w-4xl mx-auto space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-red-100 text-red-700 rounded-full text-[9px] font-black uppercase tracking-[0.2em] mb-1 border border-red-200 shadow-sm">
+    <div className="max-w-5xl mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="text-center space-y-4">
+        <div className="inline-flex items-center gap-3 px-6 py-2 bg-red-100 text-red-700 rounded-full text-xs font-black uppercase tracking-[0.3em] mb-2 border border-red-200 shadow-sm">
           <i className="fa-solid fa-shield-halved"></i>
-          Clinical Escalation Guidelines
+          Risk Escalation Guidelines
         </div>
-        <h2 className="text-2xl md:text-3xl font-black text-teal-950 tracking-tight uppercase">Clinical Safety Screening</h2>
-        <p className="text-teal-800/60 text-xs md:text-sm font-bold">Mandatory risk detection and crisis protocols.</p>
+        <h2 className="text-5xl font-black text-teal-950 tracking-tighter uppercase">Clinical Safety Standards</h2>
+        <p className="text-teal-800/60 text-lg font-bold tracking-tight">Mandatory acute risk detection and escalation protocols.</p>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] border border-red-50 overflow-hidden shadow-xl shadow-red-900/5">
-        <div className="p-8 md:p-14 space-y-10">
-          <section className="space-y-4">
-            <h3 className="text-lg md:text-xl font-black text-teal-950 flex items-center gap-3 uppercase tracking-tighter">
-              <i className="fa-solid fa-magnifying-glass-chart text-red-600"></i>
-              Automated Risk Detection
+      <div className="bg-white rounded-[3rem] border-2 border-red-50 overflow-hidden shadow-2xl">
+        <div className="p-10 md:p-16 space-y-16">
+          <section className="space-y-8">
+            <h3 className="text-3xl font-black text-teal-950 flex items-center gap-4 uppercase tracking-tighter">
+              <i className="fa-solid fa-magnifying-glass-chart text-red-600 text-4xl"></i>
+              Proactive Risk Detection
             </h3>
-            <p className="text-teal-900/70 leading-relaxed font-bold text-xs">
-              Every case processed undergoes a proprietary safety-marker scan. Our engine isolates specific linguistic cues indicating acute crisis.
-            </p>
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              {['Suicidal Ideation', 'Self-Harm Indicators', 'Severe Psychosis', 'Crisis Flags'].map(item => (
-                <div key={item} className="flex items-center gap-3 p-3 bg-teal-50/30 rounded-xl border border-teal-50 font-black text-teal-900 uppercase tracking-widest text-[8px] md:text-[9px]">
-                  <i className="fa-solid fa-circle-exclamation text-red-600"></i>
-                  {item}
-                </div>
-              ))}
+            <div className="grid md:grid-cols-2 gap-10">
+              <p className="text-teal-900/70 leading-relaxed font-bold text-lg">
+                Every synthesis cycle undergoes a proprietary multi-layer safety-marker scan. Our reasoning engine is trained to isolate specific linguistic and contextual cues indicating clinical crisis.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                {['Suicidal Ideation', 'Self-Harm Markers', 'Acute Psychosis', 'Crisis Flags'].map(item => (
+                  <div key={item} className="flex items-center gap-3 p-4 bg-red-50/30 rounded-2xl border border-red-100 font-black text-teal-900 uppercase tracking-widest text-[10px]">
+                    <i className="fa-solid fa-circle-exclamation text-red-600"></i>
+                    {item}
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
 
-          <div className="h-[1px] bg-slate-100"></div>
+          <div className="h-[2px] bg-slate-100"></div>
 
-          <section className="space-y-6">
-            <h3 className="text-lg md:text-xl font-black text-teal-950 flex items-center gap-3 uppercase tracking-tighter">
-              <i className="fa-solid fa-tower-broadcast text-red-600"></i>
-              Clinical Escalation
+          <section className="space-y-10">
+            <h3 className="text-3xl font-black text-teal-950 flex items-center gap-4 uppercase tracking-tighter">
+              <i className="fa-solid fa-tower-broadcast text-red-600 text-4xl"></i>
+              Escalation Matrix
             </h3>
-            <div className="space-y-6">
-              <div className="flex gap-6 items-start">
-                <div className="w-10 h-10 md:w-12 md:h-12 shrink-0 bg-red-600 text-white rounded-xl flex items-center justify-center font-black text-base shadow-lg shadow-red-100">1</div>
+            <div className="grid md:grid-cols-3 gap-10">
+              <div className="flex flex-col gap-6">
+                <div className="w-16 h-16 shrink-0 bg-red-600 text-white rounded-3xl flex items-center justify-center font-black text-2xl shadow-xl shadow-red-200">1</div>
                 <div>
-                  <h4 className="font-black text-teal-950 uppercase text-xs tracking-tight">Visual Alert Trigger</h4>
-                  <p className="text-teal-900/60 font-bold text-[10px] md:text-xs mt-1 leading-relaxed">Persistent red safety banner is hard-coded into the Brief if acute risk is detected.</p>
+                  <h4 className="font-black text-teal-950 uppercase text-lg tracking-tighter">Visual Alerting</h4>
+                  <p className="text-teal-900/60 font-bold text-sm mt-2 leading-relaxed">Persistent red safety banners and pulse animations are hard-coded into the record upon detection.</p>
                 </div>
               </div>
-              <div className="flex gap-6 items-start">
-                <div className="w-10 h-10 md:w-12 md:h-12 shrink-0 bg-teal-800 text-white rounded-xl flex items-center justify-center font-black text-base shadow-lg shadow-teal-100">2</div>
+              <div className="flex flex-col gap-6">
+                <div className="w-16 h-16 shrink-0 bg-teal-800 text-white rounded-3xl flex items-center justify-center font-black text-2xl shadow-xl shadow-teal-200">2</div>
                 <div>
-                  <h4 className="font-black text-teal-950 uppercase text-xs tracking-tight">Contextual Isolation</h4>
-                  <p className="text-teal-900/60 font-bold text-[10px] md:text-xs mt-1 leading-relaxed">AI engine highlights verbatim quotes that triggered flags for immediate manual verification.</p>
+                  <h4 className="font-black text-teal-950 uppercase text-lg tracking-tighter">Verbatim Isolation</h4>
+                  <p className="text-teal-900/60 font-bold text-sm mt-2 leading-relaxed">The engine isolates and highlights verbatim quotes that triggered the alert for immediate human verification.</p>
                 </div>
               </div>
-              <div className="flex gap-6 items-start">
-                <div className="w-10 h-10 md:w-12 md:h-12 shrink-0 bg-teal-950 text-white rounded-xl flex items-center justify-center font-black text-base shadow-lg shadow-teal-200">3</div>
+              <div className="flex flex-col gap-6">
+                <div className="w-16 h-16 shrink-0 bg-teal-950 text-white rounded-3xl flex items-center justify-center font-black text-2xl shadow-xl shadow-teal-300">3</div>
                 <div>
-                  <h4 className="font-black text-teal-950 uppercase text-xs tracking-tight">Treatment Plan Guardrails</h4>
-                  <p className="text-teal-900/60 font-bold text-[10px] md:text-xs mt-1 leading-relaxed">Safety cases require a mandatory stabilization plan in the TX planning facilitator.</p>
+                  <h4 className="font-black text-teal-950 uppercase text-lg tracking-tighter">Safety Guardrails</h4>
+                  <p className="text-teal-900/60 font-bold text-sm mt-2 leading-relaxed">Safety-flagged cases require a mandatory stabilization strategy in the generated Treatment Plan section.</p>
                 </div>
               </div>
             </div>
           </section>
         </div>
-        <div className="bg-red-50 p-6 text-center border-t border-red-100">
-          <p className="text-red-900 font-black text-[9px] uppercase tracking-[0.2em] max-w-xl mx-auto leading-relaxed">
-            Legal: AI is an assistive tool and does not supersede professional medical judgement.
+        <div className="bg-red-50 p-8 text-center border-t-2 border-red-100">
+          <p className="text-red-900 font-black text-xs uppercase tracking-[0.3em] leading-relaxed max-w-3xl mx-auto">
+            IMPORTANT: Artificial Intelligence is a clinical decision support tool and does not supersede the medical judgement of a licensed provider.
           </p>
         </div>
       </div>

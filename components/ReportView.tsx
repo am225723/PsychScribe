@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState, useEffect } from 'react';
 import { jsPDF } from "jspdf";
 import { ReportTab } from '../App';
@@ -17,10 +16,14 @@ const DRIVE_FOLDERS = [
 export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
-  const [isSavingToDrive, setIsSavingToDrive] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  
+  // Google Drive Linking State
+  const [isDriveLinked, setIsDriveLinked] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+  const [linkedEmail, setLinkedEmail] = useState<string | null>(null);
 
   const isUrgent = report.includes('🚨');
   
@@ -61,24 +64,20 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
       const maxLineWidth = pageWidth - margin * 2;
 
       const addHeader = (pageNum: number) => {
-        doc.setFillColor(15, 60, 60); // Dark Teal
+        doc.setFillColor(15, 60, 60); 
         doc.rect(0, 0, pageWidth, 40, 'F');
-        
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(14);
         doc.setFont("helvetica", "bold");
         doc.text("INTEGRATIVE PSYCHIATRY", margin, 15);
-        
         doc.setFontSize(8);
         doc.setFont("helvetica", "normal");
         doc.text("CLINICAL SYNTHESIS SYSTEM • CONFIDENTIAL MEDICAL RECORD", margin, 22);
-        
         doc.setFontSize(10);
         doc.setFont("helvetica", "bold");
         doc.text(`PATIENT: ${patientData.fullName.toUpperCase()}`, pageWidth - margin, 15, { align: 'right' });
         doc.setFont("helvetica", "normal");
         doc.text(`DATE: ${new Date().toLocaleDateString()}`, pageWidth - margin, 22, { align: 'right' });
-        
         y = 50;
       };
 
@@ -105,7 +104,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         doc.setFontSize(fontSize);
         doc.setFont("helvetica", isBold ? "bold" : "normal");
         doc.setTextColor(color[0], color[1], color[2]);
-        
         const lines = doc.splitTextToSize(text, maxLineWidth);
         lines.forEach((line: string) => {
           checkNewPage(5);
@@ -123,7 +121,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         doc.setDrawColor(20, 80, 80);
         doc.setLineWidth(0.5);
         doc.line(margin - 2, y + 4, margin + 20, y + 4);
-        
         doc.setFontSize(12);
         doc.setFont("helvetica", "bold");
         doc.setTextColor(15, 60, 60);
@@ -131,21 +128,17 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         y += 12;
       };
 
-      // Initial Setup
       addHeader(1);
 
-      // 1. Clinical Summary Block (Top)
       if (isUrgent) {
         doc.setFillColor(255, 235, 235);
         doc.rect(margin - 2, y - 5, maxLineWidth + 4, 25, 'F');
         doc.setDrawColor(200, 0, 0);
         doc.rect(margin - 2, y - 5, maxLineWidth + 4, 25, 'S');
-        
         doc.setTextColor(200, 0, 0);
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
         doc.text("⚠️ URGENT SAFETY ALERT: ACUTE RISK DETECTED", margin + 2, y + 2);
-        
         doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
         const safetyText = triggerQuotes ? `Trigger Quotes: "${triggerQuotes}"` : "Patient screening indicates immediate clinical risk markers.";
@@ -159,12 +152,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         lines.forEach(line => {
           const trimmed = line.trim();
           if (!trimmed || trimmed.includes('PATIENT_NAME') || trimmed.includes('URGENT SAFETY ALERT') || trimmed.includes('TRIGGER QUOTES')) return;
-          
           if (trimmed.startsWith('#')) {
             const h = trimmed.replace(/^#+\s*/, '');
             addText(h, 11, true, true, [15, 60, 60]);
           } else if (/^\d+\.\s/.test(trimmed)) {
-            // It's a numbered point
             addText(trimmed.replace(/\*\*/g, ''), 10, true, false, [0, 0, 0]);
             y += 1;
           } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
@@ -176,20 +167,14 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         });
       };
 
-      // Sections
       addSectionTitle("1. Comprehensive Clinical Synthesis");
       processContentBlock(sections.clinicalReport);
-      
       addSectionTitle("2. Detailed Review of Systems");
       processContentBlock(sections.extendedRecord);
-
       addSectionTitle("3. Impressions & Reasoning");
       processContentBlock(sections.impressions);
-
       addSectionTitle("4. Proposed Treatment Strategy");
       processContentBlock(sections.treatmentPlan);
-
-      // Final Footer for the last page
       addFooter(doc.internal.pages.length - 1);
 
       const blob = doc.output('blob');
@@ -200,10 +185,19 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
     if (sections.clinicalReport) generatePDF();
   }, [sections, patientData, isUrgent, triggerQuotes]);
 
+  const handleLinkDrive = () => {
+    setIsLinking(true);
+    // Simulate OAuth Delay
+    setTimeout(() => {
+      setIsDriveLinked(true);
+      setIsLinking(false);
+      setLinkedEmail("provider.auth@gmail.com");
+    }, 1800);
+  };
+
   const handleSaveToDrive = (folderId: string) => {
     setSelectedFolder(folderId);
     setSaveStatus('saving');
-    // Simulate API call to Google Drive
     setTimeout(() => {
       setSaveStatus('success');
       setTimeout(() => {
@@ -235,67 +229,56 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
       const trimmedLine = line.trim();
       if (!trimmedLine || trimmedLine.includes('PATIENT_NAME')) return null;
       if (trimmedLine.includes('URGENT SAFETY ALERT') || trimmedLine.includes('TRIGGER QUOTES')) return null;
-
       const indentMatch = line.match(/^(\s+)/);
       const isNested = indentMatch ? indentMatch[0].length >= 2 : false;
-
-      // Header rendering
       if (trimmedLine.startsWith('#')) {
         const cleanHeader = trimmedLine.replace(/^#+\s*/, '');
         return (
           <div 
             key={i} 
-            className={`font-black uppercase tracking-tight mb-4 mt-8 first:mt-0 text-lg md:text-xl ${isDark ? 'text-white' : 'text-teal-900'}`}
+            className={`font-black uppercase tracking-tight mb-4 mt-8 first:mt-0 text-2xl ${isDark ? 'text-white' : 'text-teal-900'}`}
           >
             {cleanHeader}
           </div>
         );
       }
-
-      // Numbered Inquiry rendering
       if (/^\d+\.\s/.test(trimmedLine)) {
         const [numberPart, ...rest] = trimmedLine.split('**');
         return (
-          <div key={i} className="mb-4 mt-6 pl-0">
-            <span className={`text-[10px] md:text-xs font-bold uppercase tracking-widest border-b-2 pb-0.5 mb-2 inline-block ${isDark ? 'text-white border-white/10' : 'text-teal-950 border-teal-50'}`}>
+          <div key={i} className="mb-6 mt-8 pl-0">
+            <span className={`text-[12px] font-black uppercase tracking-[0.3em] border-b-2 pb-1 mb-4 inline-block ${isDark ? 'text-white border-white/20' : 'text-teal-950 border-teal-100'}`}>
               {numberPart}{rest[0]}
             </span>
-            <p className={`text-[11px] md:text-sm leading-relaxed font-normal mt-1 ${isDark ? 'text-white/80' : 'text-teal-900/70'}`}>
+            <p className={`text-base leading-relaxed font-normal mt-2 ${isDark ? 'text-white/90' : 'text-teal-900/80'}`}>
               {rest.length > 1 ? rest[1].replace(/^[:\s-]+/, '') : ''}
             </p>
           </div>
         );
       }
-
-      // Strong labels
       if (trimmedLine.startsWith('**') && trimmedLine.includes('**:')) {
          return (
           <div 
             key={i} 
-            className={`${isNested ? 'ml-3 md:ml-4' : 'mt-4'} mb-1 font-bold text-[11px] md:text-sm ${isDark ? 'text-white' : 'text-teal-800'}`}
+            className={`${isNested ? 'ml-6' : 'mt-6'} mb-2 font-bold text-base ${isDark ? 'text-white' : 'text-teal-800'}`}
           >
             {renderTextWithBold(trimmedLine, false, isDark)}
           </div>
          );
       }
-
-      // Bullet points
       if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ') || trimmedLine.startsWith('• ')) {
         return (
           <li 
             key={i} 
-            className={`${isNested ? 'ml-4 md:ml-6' : 'ml-2 md:ml-4'} list-disc mb-1.5 text-[11px] md:text-sm ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}
+            className={`${isNested ? 'ml-8' : 'ml-4'} list-disc mb-2 text-base ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}
           >
             {renderTextWithBold(trimmedLine.replace(/^[-*•]\s+/, ''), false, isDark)}
           </li>
         );
       }
-
-      // Standard paragraphs
       return (
         <p 
           key={i} 
-          className={`mb-3 leading-relaxed font-medium text-[11px] md:text-sm ${isNested ? 'ml-3 md:ml-4' : ''} ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}
+          className={`mb-4 leading-relaxed font-medium text-base ${isNested ? 'ml-6' : ''} ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}
         >
           {renderTextWithBold(trimmedLine, false, isDark)}
         </p>
@@ -304,51 +287,36 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
   };
 
   return (
-    <div className="space-y-4 md:space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 lg:pb-0">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       {isUrgent && (
-        <div className="space-y-3">
-          <div className="bg-red-700 text-white px-4 md:px-8 py-4 md:py-6 rounded-[1.2rem] md:rounded-[2rem] shadow-xl flex items-center gap-3 md:gap-6 border-b-4 border-red-900">
-            <i className="fa-solid fa-triangle-exclamation text-2xl md:text-3xl animate-pulse"></i>
+        <div className="space-y-4">
+          <div className="bg-red-700 text-white px-8 py-6 rounded-[2rem] shadow-2xl flex items-center gap-6 border-b-8 border-red-900">
+            <i className="fa-solid fa-triangle-exclamation text-4xl animate-pulse"></i>
             <div>
-              <h2 className="text-sm md:text-lg font-black uppercase tracking-[0.1em]">Safety Escalation</h2>
-              <p className="font-bold opacity-90 text-[10px] md:text-sm">Acute markers for {patientData.fullName}.</p>
+              <h2 className="text-xl font-black uppercase tracking-[0.2em]">High Risk Safety Escalation</h2>
+              <p className="font-bold opacity-90 text-sm tracking-wide">Immediate clinical markers identified for {patientData.fullName}.</p>
             </div>
           </div>
           {triggerQuotes && (
-            <div className="bg-white border border-red-100 p-4 md:p-6 rounded-[1.2rem] md:rounded-[1.5rem] shadow-md relative overflow-hidden">
-               <div className="absolute top-0 left-0 w-1 h-full bg-red-600"></div>
-               <h4 className="text-[9px] font-black uppercase tracking-[0.3em] text-red-600 mb-2">Trigger Quotes</h4>
-               <p className="text-teal-950 font-bold italic text-[11px] md:text-sm leading-relaxed bg-red-50/50 p-3 md:p-4 rounded-lg">"{triggerQuotes}"</p>
+            <div className="bg-white border-2 border-red-100 p-8 rounded-[2rem] shadow-xl relative overflow-hidden">
+               <div className="absolute top-0 left-0 w-2 h-full bg-red-600"></div>
+               <h4 className="text-xs font-black uppercase tracking-[0.4em] text-red-600 mb-4">Verbatim Risk Markers</h4>
+               <p className="text-teal-950 font-black italic text-lg leading-relaxed bg-red-50/50 p-6 rounded-2xl ring-1 ring-red-100">"{triggerQuotes}"</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Desktop Tab Bar */}
-      <div className="hidden lg:flex bg-white p-1 rounded-[1.2rem] md:rounded-[1.5rem] border border-teal-50 shadow-xl sticky top-[72px] md:top-24 z-40 overflow-x-auto no-scrollbar gap-1 ring-1 ring-teal-50">
-        {(['clinical-report', 'extended-record', 'treatment-plan', 'pdf-view'] as const).map((tab) => (
-          <div
-            key={tab}
-            className={`flex-1 min-w-[120px] md:min-w-[150px] py-2.5 md:py-3 px-3 md:px-6 rounded-lg md:rounded-xl text-[8px] md:text-[9px] font-black uppercase tracking-[0.1em] transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
-              activeTab === tab ? 'bg-teal-800 text-white shadow-lg' : 'text-teal-800/40'
-            }`}
-          >
-            <i className={`fa-solid ${tab === 'clinical-report' ? 'fa-id-card' : tab === 'extended-record' ? 'fa-dna' : tab === 'treatment-plan' ? 'fa-clipboard-user' : 'fa-file-circle-plus'}`}></i>
-            {tab.split('-').join(' ')}
-          </div>
-        ))}
-      </div>
-
-      <div className="space-y-6">
+      <div className="space-y-8">
         {activeTab === 'clinical-report' && (
-          <div className="bg-white rounded-[1.5rem] md:rounded-[2.5rem] shadow-xl border border-teal-50 p-4 md:p-12 lg:p-20 max-w-[21.5cm] mx-auto min-h-[30cm] ring-1 ring-teal-50/50">
-            <div className="mb-6 md:mb-12 pb-3 md:pb-6 border-b border-teal-50 flex justify-between items-end">
+          <div className="bg-white rounded-[2.5rem] shadow-2xl border border-teal-50 p-10 md:p-16 ring-1 ring-teal-50/50">
+            <div className="mb-12 pb-6 border-b-2 border-teal-50 flex justify-between items-end">
                <div>
-                  <h1 className="text-lg md:text-2xl font-black text-teal-900 uppercase tracking-tighter">Clinical Brief</h1>
-                  <p className="text-teal-800/40 font-bold uppercase tracking-widest text-[8px] md:text-[9px] mt-0.5">{patientData.fullName}</p>
+                  <h1 className="text-4xl font-black text-teal-900 uppercase tracking-tighter">Clinical Brief</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.3em] text-xs mt-2">{patientData.fullName} // Synthesis ID: {Math.random().toString(36).substring(7).toUpperCase()}</p>
                </div>
-               <div className="text-right hidden sm:block">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-teal-800/40">{new Date().toLocaleDateString()}</p>
+               <div className="text-right">
+                  <p className="text-xs font-black uppercase tracking-[0.3em] text-teal-800/40">{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
                </div>
             </div>
             <div className="report-content">
@@ -358,20 +326,20 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         )}
 
         {activeTab === 'extended-record' && (
-          <div className="grid gap-4 md:gap-8 max-w-5xl mx-auto">
-            <div className="bg-white rounded-[1.2rem] md:rounded-[2rem] shadow-lg border border-teal-50 overflow-hidden">
-              <div className="px-4 md:px-8 py-3 md:py-4 bg-teal-50/30 border-b border-teal-50 flex items-center gap-3">
-                <i className="fa-solid fa-notes-medical text-teal-800 text-xs"></i>
-                <h3 className="font-black text-teal-900 uppercase text-[9px] tracking-[0.2em]">Review of Systems</h3>
+          <div className="grid gap-8">
+            <div className="bg-white rounded-[2.5rem] shadow-2xl border border-teal-50 overflow-hidden">
+              <div className="px-10 py-6 bg-teal-50/30 border-b border-teal-50 flex items-center gap-4">
+                <i className="fa-solid fa-notes-medical text-teal-800 text-xl"></i>
+                <h3 className="font-black text-teal-900 uppercase text-xs tracking-[0.3em]">Detailed Review of Systems</h3>
               </div>
-              <div className="p-4 md:p-8 text-teal-900">{formatContent(sections.extendedRecord)}</div>
+              <div className="p-10 text-teal-900">{formatContent(sections.extendedRecord)}</div>
             </div>
-            <div className="bg-teal-900 text-teal-50 rounded-[1.2rem] md:rounded-[2rem] shadow-xl overflow-hidden">
-              <div className="px-4 md:px-8 py-3 md:py-4 bg-white/5 border-b border-white/10 flex items-center gap-3">
-                <i className="fa-solid fa-microscope text-teal-400 text-xs"></i>
-                <h3 className="font-black text-white uppercase text-[9px] tracking-[0.2em]">Clinical Synthesis</h3>
+            <div className="bg-teal-950 text-teal-50 rounded-[2.5rem] shadow-2xl overflow-hidden ring-1 ring-white/10">
+              <div className="px-10 py-6 bg-white/5 border-b border-white/10 flex items-center gap-4">
+                <i className="fa-solid fa-microscope text-teal-400 text-xl"></i>
+                <h3 className="font-black text-white uppercase text-xs tracking-[0.3em]">Advanced Clinical Reasoning</h3>
               </div>
-              <div className="p-4 md:p-8 font-medium text-[11px] md:text-base leading-relaxed">
+              <div className="p-10 font-medium text-lg leading-relaxed">
                 {formatContent(sections.impressions, true)}
               </div>
             </div>
@@ -379,101 +347,125 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         )}
 
         {activeTab === 'treatment-plan' && (
-          <div className="bg-white rounded-[1.2rem] md:rounded-[2rem] shadow-lg border border-teal-50 overflow-hidden max-w-5xl mx-auto">
-            <div className="px-4 md:px-8 py-3 md:py-4 bg-emerald-50/50 border-b border-emerald-100 flex items-center gap-3">
-              <i className="fa-solid fa-vial-circle-check text-emerald-700 text-xs"></i>
-              <h3 className="font-black text-emerald-900 uppercase text-[9px] tracking-[0.2em]">Treatment Strategy</h3>
+          <div className="bg-white rounded-[2.5rem] shadow-2xl border border-teal-50 overflow-hidden">
+            <div className="px-10 py-6 bg-emerald-50/50 border-b border-emerald-100 flex items-center gap-4">
+              <i className="fa-solid fa-vial-circle-check text-emerald-700 text-xl"></i>
+              <h3 className="font-black text-emerald-900 uppercase text-xs tracking-[0.3em]">Comprehensive Treatment Strategy</h3>
             </div>
-            <div className="p-4 md:p-8 text-teal-900">
+            <div className="p-10 text-teal-900">
               {formatContent(sections.treatmentPlan)}
             </div>
           </div>
         )}
 
         {activeTab === 'pdf-view' && (
-          <div className="max-w-6xl mx-auto px-1 space-y-4">
-            <div className="bg-teal-950 rounded-[1.5rem] md:rounded-[2.5rem] border border-teal-900 overflow-hidden shadow-2xl h-[450px] md:h-[750px] flex flex-col transition-all">
-              <div className="px-4 md:px-8 py-3 md:py-4 border-b border-teal-900 flex flex-col sm:flex-row items-center justify-between bg-black/20 gap-3">
-                <h3 className="text-white font-black uppercase text-[9px] tracking-[0.2em] flex items-center gap-2">
-                  <i className="fa-solid fa-file-pdf text-emerald-500 text-base"></i> {patientData.initials}_Intake_Synthesis.pdf
+          <div className="px-1 space-y-8 max-w-4xl mx-auto">
+            <div className="bg-teal-950 rounded-[3rem] border border-teal-900 overflow-hidden shadow-2xl h-[700px] flex flex-col">
+              <div className="px-8 py-6 border-b border-teal-900 flex items-center justify-between bg-black/20">
+                <h3 className="text-white font-black uppercase text-xs tracking-[0.3em] flex items-center gap-4">
+                  <i className="fa-solid fa-file-pdf text-emerald-500 text-2xl"></i> {patientData.initials}_Clinical_Export.pdf
                 </h3>
                 {pdfUrl && (
-                  <a href={pdfUrl} download={`${patientData.initials}_Intake_Synthesis.pdf`} className="w-full sm:w-auto text-center bg-emerald-600 text-white px-4 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/20">
-                    Download Official Report
+                  <a href={pdfUrl} download={`${patientData.initials}_Synthesis.pdf`} className="bg-emerald-600 text-white px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/40">
+                    Download Local Copy
                   </a>
                 )}
               </div>
-              <div className="flex-grow bg-teal-900/50 p-1 md:p-6 relative">
+              <div className="flex-grow bg-teal-900/50 p-2 relative">
                  {pdfUrl ? (
-                   <iframe src={pdfUrl} className="w-full h-full rounded-lg md:rounded-2xl border-0 shadow-inner" title="PDF Preview"></iframe>
+                   <iframe src={pdfUrl} className="w-full h-full rounded-2xl border-0 shadow-inner" title="PDF Preview"></iframe>
                  ) : (
                    <div className="h-full flex flex-col items-center justify-center text-teal-400/50">
-                     <i className="fa-solid fa-dna animate-spin text-2xl mb-3"></i>
-                     <p className="font-black uppercase tracking-[0.2em] text-[9px]">Building Clinical Document...</p>
+                     <i className="fa-solid fa-dna animate-spin text-4xl mb-6"></i>
+                     <p className="font-black uppercase tracking-[0.3em] text-xs">Finalizing Clinical Encryption...</p>
                    </div>
                  )}
               </div>
             </div>
 
-            {/* DRIVE SAVE AREA AS REQUESTED IN SCREENSHOT */}
-            <div className="bg-white rounded-[1.5rem] md:rounded-[2rem] border border-teal-50 p-4 md:p-8 shadow-xl animate-in slide-in-from-bottom-2 duration-500">
-               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                 <div className="flex items-center gap-4 text-center md:text-left">
-                   <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm">
-                     <i className="fa-brands fa-google-drive text-xl"></i>
+            <div className="bg-white rounded-[2.5rem] border border-teal-50 p-10 shadow-2xl animate-in slide-in-from-bottom-4 duration-700">
+               <div className="flex flex-col md:flex-row items-center justify-between gap-10">
+                 <div className="flex items-center gap-8">
+                   <div className="w-20 h-20 bg-emerald-50 rounded-3xl flex items-center justify-center text-emerald-600 shadow-inner">
+                     <i className="fa-brands fa-google-drive text-4xl"></i>
                    </div>
                    <div>
-                     <h4 className="font-black text-teal-950 uppercase text-[10px] tracking-widest">Cloud Sync Integration</h4>
-                     <p className="text-[9px] font-bold text-teal-800/40 uppercase mt-0.5">Secure clinical document archival via Google Drive.</p>
+                     <h4 className="font-black text-teal-950 uppercase text-xl tracking-tight">Personal Drive Sync</h4>
+                     <p className="text-xs font-bold text-teal-800/50 uppercase mt-1 tracking-widest">
+                       {isDriveLinked ? `Linked as: ${linkedEmail}` : 'Account not linked for clinical archival.'}
+                     </p>
                    </div>
                  </div>
 
-                 {!showFolderPicker ? (
+                 {!isDriveLinked ? (
                    <button 
-                    onClick={() => setShowFolderPicker(true)}
-                    className="w-full md:w-auto px-10 py-4 bg-teal-900 text-teal-50 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:bg-black transition-all flex items-center justify-center gap-3 group"
+                    onClick={handleLinkDrive}
+                    disabled={isLinking}
+                    className="w-full md:w-auto px-10 py-5 bg-teal-900 text-teal-50 rounded-2xl text-xs font-black uppercase tracking-[0.2em] hover:bg-black transition-all flex items-center justify-center gap-4 group disabled:opacity-50"
                    >
-                     <i className="fa-brands fa-google-drive group-hover:scale-125 transition-transform text-teal-400"></i>
-                     Save to Google Drive
+                     {isLinking ? (
+                        <>
+                          <i className="fa-solid fa-spinner animate-spin"></i>
+                          Connecting Account...
+                        </>
+                     ) : (
+                        <>
+                          <i className="fa-brands fa-google group-hover:scale-125 transition-transform"></i>
+                          Link Personal Drive
+                        </>
+                     )}
                    </button>
                  ) : (
-                   <div className="w-full md:max-w-md space-y-3 animate-in fade-in duration-300">
-                      <div className="flex items-center justify-between px-2">
-                        <span className="text-[8px] font-black uppercase tracking-widest text-teal-800/40">Select Destination Folder</span>
-                        <button onClick={() => setShowFolderPicker(false)} className="text-[8px] font-black uppercase text-red-400 hover:text-red-600">Cancel</button>
-                      </div>
-                      <div className="space-y-1.5">
-                        {DRIVE_FOLDERS.map((folder) => (
-                          <button
-                            key={folder.id}
-                            disabled={saveStatus !== 'idle'}
-                            onClick={() => handleSaveToDrive(folder.id)}
-                            className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all text-left ${
-                              selectedFolder === folder.id 
-                                ? 'bg-emerald-600 border-emerald-700 text-white shadow-lg scale-102' 
-                                : 'bg-slate-50 border-slate-100 text-teal-900 hover:border-teal-200 hover:bg-white'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <i className={`fa-solid ${folder.icon} ${selectedFolder === folder.id ? 'text-white' : 'text-teal-300'}`}></i>
-                              <span className="text-[9px] font-black uppercase tracking-wider">{folder.name}</span>
-                            </div>
-                            {selectedFolder === folder.id && saveStatus === 'saving' && (
-                              <i className="fa-solid fa-spinner animate-spin text-[10px]"></i>
-                            )}
-                            {selectedFolder === folder.id && saveStatus === 'success' && (
-                              <i className="fa-solid fa-check text-[10px]"></i>
-                            )}
-                          </button>
-                        ))}
-                      </div>
+                   <div className="flex gap-4">
+                      <button 
+                        onClick={() => setShowFolderPicker(!showFolderPicker)}
+                        className="px-8 py-5 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-emerald-200"
+                      >
+                        {showFolderPicker ? 'Close Folders' : 'Select Target Folder'}
+                      </button>
+                      <button 
+                        onClick={() => {setIsDriveLinked(false); setLinkedEmail(null); setShowFolderPicker(false);}}
+                        className="p-5 text-red-400 hover:text-red-600 transition-colors"
+                        title="Disconnect Account"
+                      >
+                        <i className="fa-solid fa-link-slash"></i>
+                      </button>
                    </div>
                  )}
                </div>
+
+               {isDriveLinked && showFolderPicker && (
+                  <div className="mt-10 space-y-4 animate-in fade-in zoom-in-95 duration-300">
+                    <div className="flex items-center justify-between px-2">
+                      <span className="text-[10px] font-black uppercase tracking-[0.3em] text-teal-800/40">Remote Destination Map</span>
+                    </div>
+                    <div className="grid md:grid-cols-3 gap-4">
+                      {DRIVE_FOLDERS.map((folder) => (
+                        <button
+                          key={folder.id}
+                          disabled={saveStatus !== 'idle'}
+                          onClick={() => handleSaveToDrive(folder.id)}
+                          className={`p-6 rounded-2xl border-2 flex flex-col items-center gap-4 transition-all text-center ${
+                            selectedFolder === folder.id 
+                              ? 'bg-emerald-600 border-emerald-700 text-white shadow-xl scale-105' 
+                              : 'bg-slate-50 border-slate-100 text-teal-900 hover:border-teal-200 hover:bg-white'
+                          }`}
+                        >
+                          <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${selectedFolder === folder.id ? 'bg-white/20' : 'bg-teal-100/50'}`}>
+                            <i className={`fa-solid ${folder.icon} text-xl`}></i>
+                          </div>
+                          <span className="text-[10px] font-black uppercase tracking-widest leading-tight">{folder.name}</span>
+                          {selectedFolder === folder.id && saveStatus === 'saving' && <i className="fa-solid fa-spinner animate-spin text-white"></i>}
+                          {selectedFolder === folder.id && saveStatus === 'success' && <i className="fa-solid fa-check-double text-white text-xl"></i>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+               )}
                
                {saveStatus === 'success' && (
-                 <div className="mt-4 p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-center text-emerald-800 text-[9px] font-black uppercase tracking-widest animate-in slide-in-from-top-2">
-                   Clinical Brief successfully synced to vault & Google Drive.
+                 <div className="mt-8 p-6 bg-emerald-50 border-2 border-emerald-100 rounded-2xl text-center text-emerald-800 text-xs font-black uppercase tracking-[0.3em] animate-in slide-in-from-top-4">
+                   Clinical Brief Successfully Synced to Drive.
                  </div>
                )}
             </div>
