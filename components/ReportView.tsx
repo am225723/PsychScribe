@@ -34,6 +34,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   
   const isUrgent = report.includes('🚨');
   
@@ -157,11 +158,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
         y += 30;
       }
 
-      const processContentBlock = (content: string) => {
+      const processContentBlock = (content: string, sectionPrefix: string) => {
         const lines = content.split('\n');
-        lines.forEach(line => {
+        lines.forEach((line, i) => {
           const trimmed = line.trim();
           if (!trimmed || trimmed.includes('PATIENT_NAME') || trimmed.includes('URGENT SAFETY ALERT')) return;
+
           if (trimmed.startsWith('#')) {
             const h = trimmed.replace(/^#+\s*/, '');
             addText(h, 11, true, true, [15, 60, 60]);
@@ -174,17 +176,34 @@ export const ReportView: React.FC<ReportViewProps> = ({
           } else {
             addText(trimmed.replace(/\*\*/g, ''), 9.5, trimmed.includes('**'), false, [30, 30, 30]);
           }
+
+          const answerKey = `${sectionPrefix}-${i}`;
+          const answer = answers[answerKey];
+          if (answer && answer.trim()) {
+            checkNewPage(5);
+            y += 1;
+            doc.setFont("helvetica", "italic");
+            doc.setTextColor(20, 80, 80);
+            const answerText = `Note: ${answer}`;
+            const answerLines = doc.splitTextToSize(answerText, maxLineWidth - 10);
+            answerLines.forEach((l: string) => {
+               checkNewPage(5);
+               doc.text(l, margin + 5, y);
+               y += 5;
+            });
+            y += 2;
+          }
         });
       };
 
       addSectionTitle("1. Clinical Brief & Synthesis");
-      processContentBlock(sections.clinicalReport);
+      processContentBlock(sections.clinicalReport, 'clinical-report');
       addSectionTitle("2. Detailed Review of Systems");
-      processContentBlock(sections.extendedRecord);
+      processContentBlock(sections.extendedRecord, 'extended-record');
       addSectionTitle("3. Impressions & Reasoning");
-      processContentBlock(sections.impressions);
+      processContentBlock(sections.impressions, 'impressions');
       addSectionTitle("4. Proposed Treatment Strategy");
-      processContentBlock(sections.treatmentPlan);
+      processContentBlock(sections.treatmentPlan, 'treatment-plan');
       addFooter(doc.internal.pages.length - 1);
 
       const blob = doc.output('blob');
@@ -193,7 +212,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     };
 
     if (sections.clinicalReport) generatePDF();
-  }, [sections, patientData, isUrgent, triggerQuotes]);
+  }, [sections, patientData, isUrgent, triggerQuotes, answers]);
 
   const handleSaveToDrive = async (folderId: string) => {
     if (!accessToken || !pdfBlob) return;
@@ -249,25 +268,31 @@ export const ReportView: React.FC<ReportViewProps> = ({
     ));
   };
 
-  const formatContent = (text: string, isDark = false) => {
-    const lines = text.trim().split('\n');
+  const formatContent = (text: string, sectionPrefix: string, isDark = false) => {
+    const lines = text.split('\n');
     return lines.map((line, i) => {
       const trimmedLine = line.trim();
       if (!trimmedLine || trimmedLine.includes('PATIENT_NAME') || trimmedLine.includes('URGENT SAFETY ALERT')) return null;
+
+      const answerKey = `${sectionPrefix}-${i}`;
+      const isQuestion = trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ') || trimmedLine.startsWith('• ') || trimmedLine.endsWith('?') || trimmedLine.endsWith(':');
+
       const indentMatch = line.match(/^(\s+)/);
       const isNested = indentMatch ? indentMatch[0].length >= 2 : false;
+
+      let content = null;
+
       if (trimmedLine.startsWith('#')) {
         const cleanHeader = trimmedLine.replace(/^#+\s*/, '');
-        return (
-          <div key={i} className={`font-black uppercase tracking-tight mb-6 mt-12 first:mt-0 text-3xl ${isDark ? 'text-white' : 'text-teal-900'}`}>
+        content = (
+          <div className={`font-black uppercase tracking-tight mb-6 mt-12 first:mt-0 text-3xl ${isDark ? 'text-white' : 'text-teal-900'}`}>
             {cleanHeader}
           </div>
         );
-      }
-      if (/^\d+\.\s/.test(trimmedLine)) {
+      } else if (/^\d+\.\s/.test(trimmedLine)) {
         const [numberPart, ...rest] = trimmedLine.split('**');
-        return (
-          <div key={i} className="mb-8 mt-10 pl-0 border-l-4 border-teal-500/20 pl-6">
+        content = (
+          <div className="mb-8 mt-10 pl-0 border-l-4 border-teal-500/20 pl-6">
             <span className={`text-sm font-black uppercase tracking-[0.4em] mb-4 inline-block ${isDark ? 'text-emerald-400' : 'text-teal-600'}`}>
               {numberPart}{rest[0]}
             </span>
@@ -276,25 +301,40 @@ export const ReportView: React.FC<ReportViewProps> = ({
             </p>
           </div>
         );
-      }
-      if (trimmedLine.startsWith('**') && trimmedLine.includes('**:')) {
-         return (
-          <div key={i} className={`${isNested ? 'ml-8' : 'mt-8'} mb-2 font-bold text-lg ${isDark ? 'text-white' : 'text-teal-800'}`}>
+      } else if (trimmedLine.startsWith('**') && trimmedLine.includes('**:')) {
+         content = (
+          <div className={`${isNested ? 'ml-8' : 'mt-8'} mb-2 font-bold text-lg ${isDark ? 'text-white' : 'text-teal-800'}`}>
             {renderTextWithBold(trimmedLine, false, isDark)}
           </div>
          );
-      }
-      if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ') || trimmedLine.startsWith('• ')) {
-        return (
-          <li key={i} className={`${isNested ? 'ml-10' : 'ml-6'} list-disc mb-3 text-lg leading-relaxed ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}>
+      } else if (trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ') || trimmedLine.startsWith('• ')) {
+        content = (
+          <li className={`${isNested ? 'ml-10' : 'ml-6'} list-disc mb-3 text-lg leading-relaxed ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}>
             {renderTextWithBold(trimmedLine.replace(/^[-*•]\s+/, ''), false, isDark)}
           </li>
         );
+      } else {
+        content = (
+          <p className={`mb-6 leading-relaxed font-medium text-lg ${isNested ? 'ml-8' : ''} ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}>
+            {renderTextWithBold(trimmedLine, false, isDark)}
+          </p>
+        );
       }
+
       return (
-        <p key={i} className={`mb-6 leading-relaxed font-medium text-lg ${isNested ? 'ml-8' : ''} ${isDark ? 'text-white/80' : 'text-teal-900/80'}`}>
-          {renderTextWithBold(trimmedLine, false, isDark)}
-        </p>
+        <React.Fragment key={answerKey}>
+          {content}
+          {isQuestion && (
+            <div className={`mb-6 ${isNested ? 'ml-8' : ''}`}>
+              <textarea
+                value={answers[answerKey] || ''}
+                onChange={(e) => setAnswers(prev => ({ ...prev, [answerKey]: e.target.value }))}
+                placeholder="Doctor's notes..."
+                className={`w-full p-4 rounded-xl border ${isDark ? 'bg-white/10 border-white/20 text-white placeholder-white/30' : 'bg-teal-50/50 border-teal-100 text-teal-900 placeholder-teal-900/30'} focus:ring-2 focus:ring-teal-500/50 outline-none transition-all text-sm font-medium resize-y min-h-[80px]`}
+              />
+            </div>
+          )}
+        </React.Fragment>
       );
     });
   };
@@ -342,7 +382,41 @@ export const ReportView: React.FC<ReportViewProps> = ({
                </div>
             </div>
             <div className="report-content max-w-5xl">
-              {formatContent(sections.clinicalReport)}
+              {formatContent(sections.clinicalReport, 'clinical-report')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'extended-record' && (
+          <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+             <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+               <div className="space-y-2">
+                  <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">Review of Systems</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                    Detailed Clinical Record
+                  </p>
+               </div>
+            </div>
+            <div className="report-content max-w-5xl">
+              {formatContent(sections.extendedRecord, 'extended-record')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'treatment-plan' && (
+          <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+             <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+               <div className="space-y-2">
+                  <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">Treatment Plan</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                    <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span>
+                    Proposed Strategy
+                  </p>
+               </div>
+            </div>
+            <div className="report-content max-w-5xl">
+              {formatContent(sections.treatmentPlan, 'treatment-plan')}
             </div>
           </div>
         )}
