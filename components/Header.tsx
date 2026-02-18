@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Brief', icon: 'fa-id-card', tab: 'clinical-report' },
     { label: 'Record', icon: 'fa-dna', tab: 'extended-record' },
     { label: 'Plan', icon: 'fa-clipboard-user', tab: 'treatment-plan' },
-    { label: 'PDF', icon: 'fa-file-medical', tab: 'pdf-view' },
+    { label: 'PDF', icon: 'fa-file-circle-plus', tab: 'pdf-view' },
   ];
 
   const handleNavigate = (page: Page) => {

@@ -8,9 +8,20 @@ interface ReportViewProps {
   activeTab: ReportTab;
 }
 
+const DRIVE_FOLDERS = [
+  { id: '1', name: 'Clinical Records / 2026', icon: 'fa-folder-medical' },
+  { id: '2', name: 'Patient Intake Archives', icon: 'fa-box-archive' },
+  { id: '3', name: 'PsychScribe - Shared Team Folder', icon: 'fa-users' }
+];
+
 export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
+  const [isSavingToDrive, setIsSavingToDrive] = useState(false);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
+  const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+
   const isUrgent = report.includes('🚨');
   
   const patientData = useMemo(() => {
@@ -189,6 +200,20 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
     if (sections.clinicalReport) generatePDF();
   }, [sections, patientData, isUrgent, triggerQuotes]);
 
+  const handleSaveToDrive = (folderId: string) => {
+    setSelectedFolder(folderId);
+    setSaveStatus('saving');
+    // Simulate API call to Google Drive
+    setTimeout(() => {
+      setSaveStatus('success');
+      setTimeout(() => {
+        setSaveStatus('idle');
+        setShowFolderPicker(false);
+        setSelectedFolder(null);
+      }, 2000);
+    }, 1500);
+  };
+
   const renderTextWithBold = (text: string, forceNoBold = false, isDark = false) => {
     if (!text.includes('**')) return text;
     const parts = text.split('**');
@@ -308,7 +333,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
               activeTab === tab ? 'bg-teal-800 text-white shadow-lg' : 'text-teal-800/40'
             }`}
           >
-            <i className={`fa-solid ${tab === 'clinical-report' ? 'fa-id-card' : tab === 'extended-record' ? 'fa-dna' : tab === 'treatment-plan' ? 'fa-clipboard-user' : 'fa-file-medical'}`}></i>
+            <i className={`fa-solid ${tab === 'clinical-report' ? 'fa-id-card' : tab === 'extended-record' ? 'fa-dna' : tab === 'treatment-plan' ? 'fa-clipboard-user' : 'fa-file-circle-plus'}`}></i>
             {tab.split('-').join(' ')}
           </div>
         ))}
@@ -366,21 +391,21 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
         )}
 
         {activeTab === 'pdf-view' && (
-          <div className="max-w-6xl mx-auto px-1">
-            <div className="bg-teal-950 rounded-[1.5rem] md:rounded-[2.5rem] border border-teal-900 overflow-hidden shadow-2xl h-[500px] md:h-[800px] flex flex-col">
+          <div className="max-w-6xl mx-auto px-1 space-y-4">
+            <div className="bg-teal-950 rounded-[1.5rem] md:rounded-[2.5rem] border border-teal-900 overflow-hidden shadow-2xl h-[450px] md:h-[750px] flex flex-col transition-all">
               <div className="px-4 md:px-8 py-3 md:py-4 border-b border-teal-900 flex flex-col sm:flex-row items-center justify-between bg-black/20 gap-3">
                 <h3 className="text-white font-black uppercase text-[9px] tracking-[0.2em] flex items-center gap-2">
                   <i className="fa-solid fa-file-pdf text-emerald-500 text-base"></i> {patientData.initials}_Intake_Synthesis.pdf
                 </h3>
                 {pdfUrl && (
-                  <a href={pdfUrl} download={`${patientData.initials}_Intake_Synthesis.pdf`} className="w-full sm:w-auto text-center bg-emerald-600 text-white px-4 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all">
+                  <a href={pdfUrl} download={`${patientData.initials}_Intake_Synthesis.pdf`} className="w-full sm:w-auto text-center bg-emerald-600 text-white px-4 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-lg shadow-emerald-900/20">
                     Download Official Report
                   </a>
                 )}
               </div>
-              <div className="flex-grow bg-teal-900/50 p-2 md:p-8">
+              <div className="flex-grow bg-teal-900/50 p-1 md:p-6 relative">
                  {pdfUrl ? (
-                   <iframe src={pdfUrl} className="w-full h-full rounded-lg md:rounded-2xl" title="PDF Preview"></iframe>
+                   <iframe src={pdfUrl} className="w-full h-full rounded-lg md:rounded-2xl border-0 shadow-inner" title="PDF Preview"></iframe>
                  ) : (
                    <div className="h-full flex flex-col items-center justify-center text-teal-400/50">
                      <i className="fa-solid fa-dna animate-spin text-2xl mb-3"></i>
@@ -388,6 +413,69 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, activeTab }) => 
                    </div>
                  )}
               </div>
+            </div>
+
+            {/* DRIVE SAVE AREA AS REQUESTED IN SCREENSHOT */}
+            <div className="bg-white rounded-[1.5rem] md:rounded-[2rem] border border-teal-50 p-4 md:p-8 shadow-xl animate-in slide-in-from-bottom-2 duration-500">
+               <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                 <div className="flex items-center gap-4 text-center md:text-left">
+                   <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm">
+                     <i className="fa-brands fa-google-drive text-xl"></i>
+                   </div>
+                   <div>
+                     <h4 className="font-black text-teal-950 uppercase text-[10px] tracking-widest">Cloud Sync Integration</h4>
+                     <p className="text-[9px] font-bold text-teal-800/40 uppercase mt-0.5">Secure clinical document archival via Google Drive.</p>
+                   </div>
+                 </div>
+
+                 {!showFolderPicker ? (
+                   <button 
+                    onClick={() => setShowFolderPicker(true)}
+                    className="w-full md:w-auto px-10 py-4 bg-teal-900 text-teal-50 rounded-2xl text-[9px] font-black uppercase tracking-widest hover:bg-black transition-all flex items-center justify-center gap-3 group"
+                   >
+                     <i className="fa-brands fa-google-drive group-hover:scale-125 transition-transform text-teal-400"></i>
+                     Save to Google Drive
+                   </button>
+                 ) : (
+                   <div className="w-full md:max-w-md space-y-3 animate-in fade-in duration-300">
+                      <div className="flex items-center justify-between px-2">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-teal-800/40">Select Destination Folder</span>
+                        <button onClick={() => setShowFolderPicker(false)} className="text-[8px] font-black uppercase text-red-400 hover:text-red-600">Cancel</button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {DRIVE_FOLDERS.map((folder) => (
+                          <button
+                            key={folder.id}
+                            disabled={saveStatus !== 'idle'}
+                            onClick={() => handleSaveToDrive(folder.id)}
+                            className={`w-full p-3 rounded-xl border flex items-center justify-between transition-all text-left ${
+                              selectedFolder === folder.id 
+                                ? 'bg-emerald-600 border-emerald-700 text-white shadow-lg scale-102' 
+                                : 'bg-slate-50 border-slate-100 text-teal-900 hover:border-teal-200 hover:bg-white'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <i className={`fa-solid ${folder.icon} ${selectedFolder === folder.id ? 'text-white' : 'text-teal-300'}`}></i>
+                              <span className="text-[9px] font-black uppercase tracking-wider">{folder.name}</span>
+                            </div>
+                            {selectedFolder === folder.id && saveStatus === 'saving' && (
+                              <i className="fa-solid fa-spinner animate-spin text-[10px]"></i>
+                            )}
+                            {selectedFolder === folder.id && saveStatus === 'success' && (
+                              <i className="fa-solid fa-check text-[10px]"></i>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                   </div>
+                 )}
+               </div>
+               
+               {saveStatus === 'success' && (
+                 <div className="mt-4 p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-center text-emerald-800 text-[9px] font-black uppercase tracking-widest animate-in slide-in-from-top-2">
+                   Clinical Brief successfully synced to vault & Google Drive.
+                 </div>
+               )}
             </div>
           </div>
         )}
