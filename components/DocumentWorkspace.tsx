@@ -17,7 +17,7 @@ interface DocumentWorkspaceProps {
   onUnlinkDrive: () => void;
   isLinking: boolean;
   accessToken: string | null;
-  onProcess: (input: string | FileData) => void;
+  onProcess: (input: string | FileData[]) => void;
   error: { message: string; isQuota: boolean } | null;
   activeReportTab: ReportTab;
 }
@@ -98,37 +98,51 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
   const config = CONFIG[documentType];
   const [text, setText] = useState('');
   const [activeTab, setActiveTab] = useState(config.inputTabs[0].id);
-  const [file, setFile] = useState<FileData | null>(null);
+  const [files, setFiles] = useState<FileData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) return;
+    const selectedFiles = e.target.files;
+    if (!selectedFiles || selectedFiles.length === 0) return;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      setFile({
-        name: selectedFile.name,
-        mimeType: selectedFile.type,
-        base64: base64,
+    const newFiles: FileData[] = [];
+    const readPromises = Array.from(selectedFiles).map(selectedFile => {
+      return new Promise<void>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          newFiles.push({
+            name: selectedFile.name,
+            mimeType: selectedFile.type,
+            base64: base64,
+          });
+          resolve();
+        };
+        reader.readAsDataURL(selectedFile);
       });
-    };
-    reader.readAsDataURL(selectedFile);
+    });
+
+    await Promise.all(readPromises);
+    setFiles(prev => [...prev, ...newFiles]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (activeTab === 'text' && text.trim()) {
       onProcess(text);
-    } else if ((activeTab === 'file' || activeTab === 'audio') && file) {
-      onProcess(file);
+    } else if ((activeTab === 'file' || activeTab === 'audio') && files.length > 0) {
+      onProcess(files);
     }
   };
 
-  const clearFile = () => {
-    setFile(null);
+  const clearFiles = () => {
+    setFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const getAcceptForTab = () => {
@@ -249,7 +263,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
               {config.inputTabs.map((tab) => (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); clearFile(); }}
+                  onClick={() => { setActiveTab(tab.id); clearFiles(); }}
                   className={`flex-1 flex items-center justify-center gap-2 py-3 text-[10px] font-black uppercase tracking-[0.1em] transition-all rounded-2xl ${
                     activeTab === tab.id ? 'text-teal-900 bg-white shadow-md border border-teal-50' : 'text-slate-400 hover:text-teal-800'
                   }`}
@@ -276,9 +290,9 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
                   <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-2">{activeTab === 'audio' ? 'Audio Recording' : 'Intake Form'}</label>
                     <div
-                      onClick={() => !file && fileInputRef.current?.click()}
-                      className={`border-2 border-dashed rounded-[2.5rem] p-10 md:p-16 flex flex-col items-center justify-center transition-all cursor-pointer group ${
-                        file ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-100 hover:border-teal-400 hover:bg-teal-50/30'
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-[2.5rem] p-10 md:p-12 flex flex-col items-center justify-center transition-all cursor-pointer group ${
+                        files.length > 0 ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-100 hover:border-teal-400 hover:bg-teal-50/30'
                       }`}
                     >
                       <input
@@ -286,39 +300,57 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
                         ref={fileInputRef}
                         onChange={handleFileChange}
                         accept={getAcceptForTab()}
+                        multiple
                         className="hidden"
                       />
-                      {!file ? (
-                        <>
-                          <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-teal-100 mb-6 shadow-md ring-1 ring-teal-50 group-hover:scale-110 group-hover:text-teal-600 transition-all">
-                            <i className={`${activeTab === 'audio' ? 'fa-solid fa-microphone' : 'fa-solid fa-file-arrow-up'} text-2xl`}></i>
-                          </div>
-                          <p className="text-lg font-black text-teal-950 uppercase tracking-tight">{getUploadLabel()}</p>
-                          <p className="text-teal-800/30 font-bold mt-2 uppercase tracking-[0.2em] text-[10px]">{getUploadHint()}</p>
-                        </>
-                      ) : (
-                        <>
-                          <div className="w-16 h-16 bg-emerald-600 rounded-3xl flex items-center justify-center text-white mb-6 shadow-xl ring-4 ring-emerald-50">
-                            <i className="fa-solid fa-check text-2xl"></i>
-                          </div>
-                          <p className="text-sm font-black text-teal-950 uppercase tracking-tight truncate max-w-[280px]">{file.name}</p>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); clearFile(); }}
-                            className="text-[10px] font-black text-red-400 hover:text-red-600 mt-4 uppercase tracking-widest flex items-center gap-2 py-2 px-4 rounded-xl hover:bg-red-50 transition-all"
-                          >
-                            <i className="fa-solid fa-trash-can"></i>
-                            Remove File
-                          </button>
-                        </>
-                      )}
+                      <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-4 shadow-md transition-all ${
+                        files.length > 0 ? 'bg-emerald-600 text-white ring-4 ring-emerald-50 shadow-xl' : 'bg-white text-teal-100 ring-1 ring-teal-50 group-hover:scale-110 group-hover:text-teal-600'
+                      }`}>
+                        <i className={`${files.length > 0 ? 'fa-solid fa-check' : (activeTab === 'audio' ? 'fa-solid fa-microphone' : 'fa-solid fa-file-arrow-up')} text-2xl`}></i>
+                      </div>
+                      <p className="text-lg font-black text-teal-950 uppercase tracking-tight">
+                        {files.length > 0 ? `${files.length} File${files.length > 1 ? 's' : ''} Selected` : getUploadLabel()}
+                      </p>
+                      <p className="text-teal-800/30 font-bold mt-1 uppercase tracking-[0.2em] text-[10px]">
+                        {files.length > 0 ? 'Click to add more' : getUploadHint()}
+                      </p>
                     </div>
+
+                    {files.length > 0 && (
+                      <div className="space-y-2 mt-3">
+                        {files.map((f, index) => (
+                          <div key={index} className="flex items-center justify-between bg-teal-50/50 border border-teal-100/50 rounded-2xl px-5 py-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 bg-teal-100 rounded-xl flex items-center justify-center shrink-0">
+                                <i className={`fa-solid ${f.mimeType.startsWith('audio/') ? 'fa-waveform' : f.mimeType.startsWith('image/') ? 'fa-image' : 'fa-file-pdf'} text-teal-700 text-xs`}></i>
+                              </div>
+                              <span className="text-xs font-bold text-teal-900 truncate">{f.name}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeFile(index)}
+                              className="text-red-300 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all shrink-0"
+                            >
+                              <i className="fa-solid fa-xmark text-sm"></i>
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={clearFiles}
+                          className="text-[10px] font-black text-red-400 hover:text-red-600 uppercase tracking-widest flex items-center gap-2 py-2 px-4 rounded-xl hover:bg-red-50 transition-all mx-auto"
+                        >
+                          <i className="fa-solid fa-trash-can"></i>
+                          Remove All
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <button
                   type="submit"
-                  disabled={isProcessing || (activeTab === 'text' && !text.trim()) || ((activeTab === 'file' || activeTab === 'audio') && !file)}
+                  disabled={isProcessing || (activeTab === 'text' && !text.trim()) || ((activeTab === 'file' || activeTab === 'audio') && files.length === 0)}
                   className={`w-full py-4 md:py-6 rounded-[2rem] font-black text-xs md:text-sm uppercase tracking-[0.2em] text-white shadow-2xl transition-all flex items-center justify-center gap-4 overflow-hidden relative group ${
                     isProcessing
                       ? 'bg-teal-100 cursor-not-allowed text-teal-800/30'

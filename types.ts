@@ -15,3 +15,5 @@ export interface FileData {
   base64: string;
   name: string;
 }
+
+export type ProcessInput = string | FileData[];

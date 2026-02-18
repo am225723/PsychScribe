@@ -189,13 +189,17 @@ const PROMPTS: Record<DocumentType, { instruction: string; filePrompt: string }>
   },
 };
 
-export async function analyzeIntake(content: string | { mimeType: string, data: string }, documentType: DocumentType = 'summary') {
+export async function analyzeIntake(content: string | { mimeType: string, data: string }[], documentType: DocumentType = 'summary') {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = PROMPTS[documentType];
   
-  const parts = typeof content === 'string' 
-    ? [{ text: content }]
-    : [{ inlineData: content }, { text: prompt.filePrompt }];
+  let parts: any[];
+  if (typeof content === 'string') {
+    parts = [{ text: content }];
+  } else {
+    parts = content.map(file => ({ inlineData: file }));
+    parts.push({ text: prompt.filePrompt });
+  }
 
   return withRetry(async () => {
     const response = await ai.models.generateContent({

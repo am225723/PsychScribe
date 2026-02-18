@@ -193,14 +193,14 @@ const App: React.FC = () => {
   };
 
   const createProcessHandler = (docType: DocumentType) => {
-    return async (input: string | FileData) => {
+    return async (input: string | FileData[]) => {
       setIsProcessing(true);
       setError(null);
       
       try {
         const result = typeof input === 'string' 
           ? await analyzeIntake(input, docType)
-          : await analyzeIntake({ mimeType: input.mimeType, data: input.base64 }, docType);
+          : await analyzeIntake(input.map(f => ({ mimeType: f.mimeType, data: f.base64 })), docType);
 
         setReport(result);
         setActiveReportTab('clinical-report');
