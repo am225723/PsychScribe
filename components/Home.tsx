@@ -38,20 +38,20 @@ export const Home: React.FC<HomeProps> = ({
   activeReportTab,
 }) => {
   return !report ? (
-    <div className="max-w-7xl mx-auto space-y-12">
-      <div className={`space-y-12 transition-opacity duration-300 ${isProcessing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-        <div className="text-center space-y-6 pt-10">
+    <div className="max-w-7xl mx-auto space-y-6">
+      <div className={`space-y-6 transition-opacity duration-300 ${isProcessing ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+        <div className="text-center space-y-3 pt-4">
           <div className="relative group inline-block">
             <div className="absolute inset-0 bg-teal-400 blur-3xl opacity-10 group-hover:opacity-20 transition-opacity"></div>
-            <img src={LOGO_URL} alt="Dr. Zelisko Logo" className="w-32 h-32 mx-auto relative z-10 drop-shadow-2xl transition-transform group-hover:scale-110 duration-700" />
+            <img src={LOGO_URL} alt="Dr. Zelisko Logo" className="w-20 h-20 mx-auto relative z-10 drop-shadow-2xl transition-transform group-hover:scale-110 duration-700" />
           </div>
-          <div className="space-y-3">
-            <h2 className="text-5xl font-black text-teal-950 tracking-tighter uppercase lg:text-6xl">Dr. Zelisko Intake</h2>
-            <p className="text-teal-800/60 max-w-xl mx-auto text-sm font-bold leading-relaxed uppercase tracking-[0.4em]">Clinical Synthesis Engine: drz.services</p>
+          <div className="space-y-1">
+            <h2 className="text-4xl font-black text-teal-950 tracking-tighter uppercase lg:text-5xl">Dr. Zelisko Intake</h2>
+            <p className="text-teal-800/60 max-w-xl mx-auto text-xs font-bold leading-relaxed uppercase tracking-[0.4em]">Clinical Synthesis Engine: drz.services</p>
           </div>
         </div>
 
-        <div className="max-w-4xl mx-auto px-4 grid md:grid-cols-2 gap-6">
+        <div className="max-w-4xl mx-auto px-4 grid md:grid-cols-2 gap-4">
           {!hasApiKey && window.aistudio ? (
             <div className="bg-amber-50 border border-amber-100 p-6 rounded-[2rem] flex items-center justify-between gap-6 shadow-xl animate-in slide-in-from-top-6 duration-500">
               <div className="flex items-center gap-5">
