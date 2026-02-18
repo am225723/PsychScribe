@@ -7,26 +7,14 @@ interface ReportViewProps {
   activeTab: ReportTab;
   isDriveLinked: boolean;
   linkedEmail: string | null;
-  onLinkDrive: () => void;
-  onUnlinkDrive: () => void;
-  isLinking: boolean;
   accessToken: string | null;
 }
-
-const DRIVE_FOLDERS = [
-  { id: '1', name: 'Clinical Records / 2026', icon: 'fa-folder-medical', path: '/Root/Clinical' },
-  { id: '2', name: 'Patient Intake Archives', icon: 'fa-box-archive', path: '/Root/Archives' },
-  { id: '3', name: 'PsychScribe - Shared Team Folder', icon: 'fa-users', path: '/Shared/Team' }
-];
 
 export const ReportView: React.FC<ReportViewProps> = ({ 
   report, 
   activeTab,
   isDriveLinked,
   linkedEmail,
-  onLinkDrive,
-  onUnlinkDrive,
-  isLinking,
   accessToken
 }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
@@ -34,6 +22,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success'>('idle');
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  const [patientFolders, setPatientFolders] = useState<{ id: string; name: string }[]>([]);
+  const [loadingFolders, setLoadingFolders] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   
   const isUrgent = report.includes('🚨');
@@ -214,6 +204,57 @@ export const ReportView: React.FC<ReportViewProps> = ({
     if (sections.clinicalReport) generatePDF();
   }, [sections, patientData, isUrgent, triggerQuotes, answers]);
 
+  const findOrCreateFolder = async (name: string, parentId?: string): Promise<string> => {
+    if (!accessToken) throw new Error("Not authenticated");
+    
+    let query = `name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    if (parentId) query += ` and '${parentId}' in parents`;
+
+    const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    const searchData = await searchRes.json();
+
+    if (searchData.files && searchData.files.length > 0) {
+      return searchData.files[0].id;
+    }
+
+    const metadata: any = {
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+    };
+    if (parentId) metadata.parents = [parentId];
+
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(metadata),
+    });
+    const created = await createRes.json();
+    return created.id;
+  };
+
+  const loadPatientFolders = async () => {
+    if (!accessToken) return;
+    setLoadingFolders(true);
+    try {
+      const patientFormsId = await findOrCreateFolder('PatientForms');
+      
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${patientFormsId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id,name)&orderBy=name`, {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      });
+      const data = await res.json();
+      setPatientFolders(data.files || []);
+    } catch (err) {
+      console.error("Failed to load patient folders", err);
+    } finally {
+      setLoadingFolders(false);
+    }
+  };
+
   const handleSaveToDrive = async (folderId: string) => {
     if (!accessToken || !pdfBlob) return;
     
@@ -221,12 +262,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
     setSaveStatus('saving');
 
     try {
-      const fileName = `${patientData.initials}_Clinical_Brief_${new Date().getTime()}.pdf`;
+      const dateStr = new Date().toISOString().split('T')[0];
+      const fileName = `${patientData.fullName.replace(/\s+/g, '_')}_${dateStr}.pdf`;
       const metadata = {
         name: fileName,
         mimeType: 'application/pdf',
-        // In a production app, we would search for the folderId in the user's real Drive
-        // but for now we upload to the root 'drive.file' restricted area
+        parents: [folderId],
       };
 
       const formData = new FormData();
@@ -247,6 +288,19 @@ export const ReportView: React.FC<ReportViewProps> = ({
         setShowFolderPicker(false);
         setSelectedFolder(null);
       }, 3000);
+    } catch (error) {
+      console.error("Drive upload error", error);
+      setSaveStatus('idle');
+    }
+  };
+
+  const handleSaveToPatientFolder = async () => {
+    if (!accessToken || !pdfBlob) return;
+    setSaveStatus('saving');
+    try {
+      const patientFormsId = await findOrCreateFolder('PatientForms');
+      const patientFolderId = await findOrCreateFolder(patientData.fullName, patientFormsId);
+      await handleSaveToDrive(patientFolderId);
     } catch (error) {
       console.error("Drive upload error", error);
       setSaveStatus('idle');
@@ -453,105 +507,108 @@ export const ReportView: React.FC<ReportViewProps> = ({
               </div>
             </div>
 
+            {isDriveLinked && (
             <div className="bg-white rounded-[3.5rem] border border-teal-50 p-12 md:p-16 shadow-2xl animate-in slide-in-from-bottom-6 duration-700 relative overflow-hidden">
                <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
                  <i className="fa-brands fa-google-drive text-[150px]"></i>
                </div>
                
-               <div className="flex flex-col lg:flex-row items-center justify-between gap-16 relative z-10">
-                 <div className="flex items-center gap-10">
-                   <div className="w-24 h-24 bg-emerald-50 rounded-[2rem] flex items-center justify-center text-emerald-600 shadow-inner border border-emerald-100">
-                     <i className="fa-brands fa-google-drive text-5xl"></i>
+               <div className="flex flex-col lg:flex-row items-center justify-between gap-10 relative z-10">
+                 <div className="flex items-center gap-8">
+                   <div className="w-20 h-20 bg-emerald-50 rounded-[1.5rem] flex items-center justify-center text-emerald-600 shadow-inner border border-emerald-100">
+                     <i className="fa-brands fa-google-drive text-4xl"></i>
                    </div>
                    <div className="space-y-2">
-                     <h4 className="font-black text-teal-950 uppercase text-3xl tracking-tight">Sync to Personal Cloud</h4>
+                     <h4 className="font-black text-teal-950 uppercase text-2xl tracking-tight">Save to Google Drive</h4>
                      <div className="flex items-center gap-3 text-xs font-bold uppercase tracking-widest text-teal-800/50">
-                       <span className={`w-2 h-2 rounded-full ${isDriveLinked ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                       {isDriveLinked ? `Verified Clinical Sync: ${linkedEmail}` : 'Connection required for automated archival.'}
+                       <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                       Synced: {linkedEmail}
                      </div>
+                     <p className="text-[10px] text-teal-800/40 font-bold">
+                       <i className="fa-solid fa-folder-tree mr-1"></i>
+                       PatientForms / {patientData.fullName}
+                     </p>
                    </div>
                  </div>
 
-                 <div className="flex flex-wrap items-center gap-6 w-full lg:w-auto">
-                   {!isDriveLinked ? (
-                     <button 
-                      onClick={onLinkDrive}
-                      disabled={isLinking}
-                      className="w-full lg:w-auto px-12 py-6 bg-teal-950 text-teal-50 rounded-2xl text-sm font-black uppercase tracking-[0.2em] hover:bg-black transition-all flex items-center justify-center gap-5 group disabled:opacity-50 shadow-2xl shadow-teal-900/30"
-                     >
-                       {isLinking ? (
-                          <>
-                            <i className="fa-solid fa-circle-notch animate-spin text-xl"></i>
-                            Authorizing...
-                          </>
-                       ) : (
-                          <>
-                            <i className="fa-brands fa-google text-xl group-hover:scale-125 transition-transform"></i>
-                            Link My Google Drive
-                          </>
-                       )}
-                     </button>
-                   ) : (
-                     <div className="flex flex-wrap items-center gap-6 w-full lg:w-auto">
-                        <button 
-                          onClick={() => setShowFolderPicker(!showFolderPicker)}
-                          className="flex-grow lg:flex-none px-12 py-6 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-2xl shadow-emerald-200 hover:bg-emerald-700 transition-colors"
-                        >
-                          {showFolderPicker ? 'Cancel Selection' : 'Choose Target Folder'}
-                        </button>
-                        <button 
-                          onClick={onUnlinkDrive}
-                          className="px-8 py-6 border-2 border-red-50 text-red-400 hover:bg-red-50 hover:text-red-600 transition-all rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-3"
-                          title="Switch or Unlink Account"
-                        >
-                          <i className="fa-solid fa-link-slash"></i>
-                          Change Account
-                        </button>
-                     </div>
-                   )}
+                 <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
+                    <button 
+                      onClick={handleSaveToPatientFolder}
+                      disabled={saveStatus !== 'idle'}
+                      className="flex-grow lg:flex-none px-10 py-5 bg-teal-950 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-2xl shadow-teal-900/20 hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                    >
+                      {saveStatus === 'saving' ? (
+                        <><i className="fa-solid fa-circle-notch animate-spin"></i> Saving...</>
+                      ) : saveStatus === 'success' ? (
+                        <><i className="fa-solid fa-check-double"></i> Saved</>
+                      ) : (
+                        <><i className="fa-solid fa-cloud-arrow-up"></i> Quick Save</>
+                      )}
+                    </button>
+                    <button 
+                      onClick={() => { setShowFolderPicker(!showFolderPicker); if (!showFolderPicker) loadPatientFolders(); }}
+                      disabled={saveStatus === 'saving'}
+                      className="flex-grow lg:flex-none px-10 py-5 bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-2xl shadow-emerald-200 hover:bg-emerald-700 transition-colors flex items-center justify-center gap-3 disabled:opacity-50"
+                    >
+                      <i className="fa-solid fa-folder-open"></i>
+                      {showFolderPicker ? 'Close' : 'Choose Patient'}
+                    </button>
                  </div>
                </div>
 
-               {isDriveLinked && showFolderPicker && (
-                  <div className="mt-16 space-y-8 animate-in fade-in zoom-in-95 duration-500">
+               {showFolderPicker && (
+                  <div className="mt-12 space-y-6 animate-in fade-in zoom-in-95 duration-500">
                     <div className="flex items-center justify-between px-4 border-l-4 border-emerald-500">
-                      <span className="text-sm font-black uppercase tracking-[0.4em] text-teal-900">Destination Directory</span>
-                      <p className="text-xs font-bold text-teal-800/40 italic">Select the destination folder in your linked clinical storage.</p>
+                      <span className="text-sm font-black uppercase tracking-[0.3em] text-teal-900">Patient Folders</span>
+                      <p className="text-xs font-bold text-teal-800/40">PatientForms / ...</p>
                     </div>
-                    <div className="grid md:grid-cols-3 gap-8">
-                      {DRIVE_FOLDERS.map((folder) => (
-                        <button
-                          key={folder.id}
-                          disabled={saveStatus !== 'idle'}
-                          onClick={() => handleSaveToDrive(folder.id)}
-                          className={`p-10 rounded-[2.5rem] border-2 flex flex-col items-center gap-6 transition-all text-center group ${
-                            selectedFolder === folder.id 
-                              ? 'bg-emerald-600 border-emerald-700 text-white shadow-[0_30px_60px_-15px_rgba(5,150,105,0.4)] scale-105' 
-                              : 'bg-slate-50 border-slate-100 text-teal-900 hover:border-teal-300 hover:bg-white hover:shadow-xl'
-                          }`}
-                        >
-                          <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-transform group-hover:scale-110 ${selectedFolder === folder.id ? 'bg-white/20' : 'bg-teal-100/50 text-teal-700'}`}>
-                            <i className={`fa-solid ${folder.icon} text-2xl`}></i>
+
+                    {loadingFolders ? (
+                      <div className="flex items-center justify-center py-12">
+                        <i className="fa-solid fa-circle-notch animate-spin text-teal-300 text-2xl mr-4"></i>
+                        <span className="text-sm font-bold text-teal-800/40 uppercase tracking-widest">Loading folders...</span>
+                      </div>
+                    ) : (
+                      <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {patientFolders.map((folder) => (
+                          <button
+                            key={folder.id}
+                            disabled={saveStatus !== 'idle'}
+                            onClick={() => handleSaveToDrive(folder.id)}
+                            className={`p-6 rounded-2xl border-2 flex flex-col items-center gap-3 transition-all text-center group ${
+                              selectedFolder === folder.id 
+                                ? 'bg-emerald-600 border-emerald-700 text-white shadow-xl scale-105' 
+                                : 'bg-slate-50 border-slate-100 text-teal-900 hover:border-teal-300 hover:bg-white hover:shadow-lg'
+                            }`}
+                          >
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${selectedFolder === folder.id ? 'bg-white/20' : 'bg-teal-100/50 text-teal-700'}`}>
+                              <i className="fa-solid fa-folder-open text-xl"></i>
+                            </div>
+                            <span className="text-[10px] font-black uppercase tracking-wider block leading-tight truncate w-full">{folder.name}</span>
+                            {selectedFolder === folder.id && saveStatus === 'saving' && <i className="fa-solid fa-circle-notch animate-spin text-white text-lg"></i>}
+                            {selectedFolder === folder.id && saveStatus === 'success' && <i className="fa-solid fa-check-double text-white text-xl animate-bounce"></i>}
+                          </button>
+                        ))}
+                        {patientFolders.length === 0 && !loadingFolders && (
+                          <div className="col-span-full text-center py-8 text-teal-800/30">
+                            <i className="fa-solid fa-folder-plus text-3xl mb-3 block"></i>
+                            <p className="text-xs font-bold uppercase tracking-widest">No patient folders yet</p>
+                            <p className="text-[10px] mt-1">Use "Quick Save" to auto-create a folder for this patient</p>
                           </div>
-                          <div className="space-y-1">
-                            <span className="text-xs font-black uppercase tracking-widest block leading-tight">{folder.name}</span>
-                            <span className={`text-[9px] font-bold uppercase tracking-widest ${selectedFolder === folder.id ? 'text-white/60' : 'text-teal-800/30'}`}>{folder.path}</span>
-                          </div>
-                          {selectedFolder === folder.id && saveStatus === 'saving' && <i className="fa-solid fa-circle-notch animate-spin text-white text-2xl"></i>}
-                          {selectedFolder === folder.id && saveStatus === 'success' && <i className="fa-solid fa-check-double text-white text-3xl animate-bounce"></i>}
-                        </button>
-                      ))}
-                    </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                )}
                
-               {saveStatus === 'success' && (
-                 <div className="mt-12 p-8 bg-emerald-50 border-2 border-emerald-100 rounded-[2rem] text-center text-emerald-800 text-sm font-black uppercase tracking-[0.4em] animate-in slide-in-from-top-6 shadow-xl">
-                   <i className="fa-solid fa-cloud-arrow-up mr-4"></i>
-                   Cloud Synchronization Finalized.
+               {saveStatus === 'success' && !showFolderPicker && (
+                 <div className="mt-8 p-6 bg-emerald-50 border-2 border-emerald-100 rounded-2xl text-center text-emerald-800 text-sm font-black uppercase tracking-[0.3em] animate-in slide-in-from-top-4 shadow-xl">
+                   <i className="fa-solid fa-cloud-arrow-up mr-3"></i>
+                   Saved to PatientForms / {patientData.fullName}
                  </div>
                )}
             </div>
+            )}
           </div>
         )}
       </div>

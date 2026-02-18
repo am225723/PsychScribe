@@ -55,10 +55,10 @@ const App: React.FC = () => {
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
-  const [isDriveLinked, setIsDriveLinked] = useState(false);
+  const [isDriveLinked, setIsDriveLinked] = useState(() => !!localStorage.getItem('drive_access_token'));
   const [isLinking, setIsLinking] = useState(false);
-  const [linkedEmail, setLinkedEmail] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [linkedEmail, setLinkedEmail] = useState<string | null>(() => localStorage.getItem('drive_linked_email'));
+  const [accessToken, setAccessToken] = useState<string | null>(() => localStorage.getItem('drive_access_token'));
   const [tokenClient, setTokenClient] = useState<any>(null);
 
   useEffect(() => {
@@ -85,16 +85,30 @@ const App: React.FC = () => {
           const client = window.google.accounts.oauth2.initTokenClient({
             client_id: CLIENT_ID,
             scope: SCOPES,
-            callback: (response: any) => {
+            callback: async (response: any) => {
               if (response.error !== undefined) {
                 console.error("Auth error:", response);
                 setError({ message: "Authentication Error: " + (response.error_description || "Request denied."), isQuota: false });
                 setIsLinking(false);
                 return;
               }
-              setAccessToken(response.access_token);
+              const token = response.access_token;
+              setAccessToken(token);
               setIsDriveLinked(true);
-              setLinkedEmail("support@drzelisko.com");
+              localStorage.setItem('drive_access_token', token);
+
+              try {
+                const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+                  headers: { Authorization: 'Bearer ' + token }
+                });
+                const info = await res.json();
+                const email = info.email || 'support@drzelisko.com';
+                setLinkedEmail(email);
+                localStorage.setItem('drive_linked_email', email);
+              } catch {
+                setLinkedEmail('support@drzelisko.com');
+                localStorage.setItem('drive_linked_email', 'support@drzelisko.com');
+              }
               setIsLinking(false);
             },
           });
@@ -145,19 +159,6 @@ const App: React.FC = () => {
     }
     setIsLinking(true);
     tokenClient.requestAccessToken({ prompt: 'consent' });
-  };
-
-  const handleUnlinkDrive = () => {
-    if (accessToken) {
-      window.google.accounts.oauth2.revoke(accessToken, () => {
-        setIsDriveLinked(false);
-        setLinkedEmail(null);
-        setAccessToken(null);
-      });
-    } else {
-      setIsDriveLinked(false);
-      setLinkedEmail(null);
-    }
   };
 
   const handleOpenKeySelector = async () => {
@@ -237,13 +238,8 @@ const App: React.FC = () => {
 
   const workspaceProps = {
     isProcessing,
-    hasApiKey,
-    onOpenKeySelector: handleOpenKeySelector,
     isDriveLinked,
     linkedEmail,
-    onLinkDrive: handleLinkDrive,
-    onUnlinkDrive: handleUnlinkDrive,
-    isLinking,
     accessToken,
     error,
     activeReportTab,
@@ -260,6 +256,11 @@ const App: React.FC = () => {
         activeReportTab={activeReportTab}
         onSelectReportTab={setActiveReportTab}
         onReset={handleReset}
+        hasApiKey={hasApiKey}
+        isDriveLinked={isDriveLinked}
+        linkedEmail={linkedEmail}
+        onLinkDrive={handleLinkDrive}
+        isLinking={isLinking}
       />
       
       <main className="flex-grow container mx-auto px-4 lg:px-10 py-12 relative">

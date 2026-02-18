@@ -16,10 +16,8 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/App.tsx` - Main app component with routing and state management
 - `/components/Dashboard.tsx` - Home page with 3 document type selection cards
 - `/components/DocumentWorkspace.tsx` - Reusable workspace for all document types (summary/treatment/darp)
-- `/components/Header.tsx` - Top header and bottom navigation bar
-- `/components/Home.tsx` - Legacy home component (no longer used directly)
-- `/components/IntakeForm.tsx` - Legacy intake form (replaced by DocumentWorkspace)
-- `/components/ReportView.tsx` - Report display with tabs
+- `/components/Header.tsx` - Top header with System Ready + Drive Sync indicators, bottom navigation bar
+- `/components/ReportView.tsx` - Report display with tabs and Google Drive save (PatientForms folder structure)
 - `/components/Vault.tsx` - Patient archives / history
 - `/components/ChatBot.tsx` - AI assistant chatbot
 - `/components/Documentation.tsx` - System documentation page
@@ -43,9 +41,17 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/support` - Support
 
 ## Document Types
-1. **Intake Summary** (`/summary`) - Clinical Synthesis Report from intake data (PDF/text input)
-2. **Treatment Plan** (`/treatment`) - Clinical Mental Health Treatment Plan (PDF/text/audio input)
-3. **Session Note** (`/darp`) - DARP Progress Note (PDF/text/audio input) - DARP prompt placeholder, awaiting full prompt
+1. **Intake Summary** (`/summary`) - Clinical Synthesis Report from intake data (PDF/text input, multiple files)
+2. **Treatment Plan** (`/treatment`) - Clinical Mental Health Treatment Plan (PDF/text/audio input, multiple files)
+3. **Session Note** (`/darp`) - DARP Progress Note (PDF/text/audio input, multiple files) - DARP prompt placeholder, awaiting full prompt
+
+## Google Drive Integration
+- Drive token persisted in localStorage (survives page reloads)
+- No unlink option - once linked, stays linked
+- Folder structure: `/PatientForms/[PatientFullName]/`
+- "Quick Save" auto-creates patient folder and saves PDF
+- "Choose Patient" shows existing patient folders for manual selection
+- Drive status indicator always visible in header
 
 ## Environment Variables
 - `API_KEY` - Google Gemini API key (injected via Vite's `process.env.API_KEY`)
@@ -58,8 +64,11 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - Static deployment, build with `npm run build`, serve from `dist/`
 
 ## Recent Changes
+- 2026-02-18: Moved System Ready and Drive Sync indicators to header (always visible)
+- 2026-02-18: Removed Drive unlink capability, persist Drive token in localStorage
+- 2026-02-18: Implemented /PatientForms/[PatientFullName] folder structure with patient folder picker
+- 2026-02-18: Added multiple file upload support across all workspaces
+- 2026-02-18: Removed legacy Home.tsx and IntakeForm.tsx components
 - 2026-02-18: Restructured app with Dashboard home page and 3 document type workspaces
 - 2026-02-18: Added Treatment Plan AI prompt (Headway Clinical Team standards)
-- 2026-02-18: Added DARP Session Note placeholder prompt (awaiting full prompt)
 - 2026-02-18: Created reusable DocumentWorkspace component with configurable input tabs
-- 2026-02-18: Compressed all page layouts for better desktop spacing
