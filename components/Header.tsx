@@ -16,6 +16,8 @@ interface HeaderProps {
   linkedEmail: string | null;
   onLinkDrive: () => void;
   isLinking: boolean;
+  onSignOut?: () => void;
+  userEmail?: string | null;
 }
 
 const LOGO_URL = "https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png";
@@ -32,6 +34,8 @@ export const Header: React.FC<HeaderProps> = ({
   linkedEmail,
   onLinkDrive,
   isLinking,
+  onSignOut,
+  userEmail,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -191,6 +195,16 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <i className={`fa-solid ${isChatOpen ? 'fa-xmark' : 'fa-comment-dots'} text-lg md:text-2xl`}></i>
               </button>
+              {onSignOut && (
+                <button 
+                  onClick={onSignOut}
+                  className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center transition-all border-2 bg-white text-slate-400 border-slate-100 hover:bg-red-50 hover:text-red-500 hover:border-red-200"
+                  aria-label="Sign out"
+                  title={userEmail ? `Signed in as ${userEmail}` : 'Sign out'}
+                >
+                  <i className="fa-solid fa-right-from-bracket text-lg md:text-xl"></i>
+                </button>
+              )}
             </div>
           </div>
         </div>

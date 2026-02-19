@@ -11,11 +11,15 @@ import { HipaaCompliance } from './components/HipaaCompliance';
 import { Support } from './components/Support';
 import { ProgressBar } from './components/ProgressBar';
 import { ChatBot } from './components/ChatBot';
+import { Login } from './components/Login';
+import { MfaChallenge } from './components/MfaChallenge';
+import { MfaEnroll } from './components/MfaEnroll';
 import { analyzeIntake } from './services/geminiService';
-import { findOrCreatePatient, saveReport, getReports, deleteReport as deleteReportDb } from './services/supabaseService';
+import { supabase, findOrCreatePatient, saveReport, getReports, deleteReport as deleteReportDb } from './services/supabaseService';
 import type { Report } from './services/supabaseService';
 import { FileData } from './types';
 import type { DocumentType, AnalysisMetadata } from './services/geminiService';
+import type { Session } from '@supabase/supabase-js';
 
 export type Page = 'home' | 'vault' | 'batch' | 'docs' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
@@ -59,9 +63,15 @@ function reportToHistoryItem(report: Report): ReportHistoryItem {
   };
 }
 
+type AuthState = 'loading' | 'unauthenticated' | 'mfa_challenge' | 'mfa_enroll_prompt' | 'authenticated';
+
 const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+
+  const [authState, setAuthState] = useState<AuthState>('loading');
+  const [session, setSession] = useState<Session | null>(null);
+
   const [activeReportTab, setActiveReportTab] = useState<ReportTab>('clinical-report');
   const [isProcessing, setIsProcessing] = useState(false);
   const [report, setReport] = useState<string | null>(null);
@@ -77,6 +87,59 @@ const App: React.FC = () => {
   const [accessToken, setAccessToken] = useState<string | null>(() => localStorage.getItem('drive_access_token'));
   const [tokenClient, setTokenClient] = useState<any>(null);
 
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (currentSession) {
+        setSession(currentSession);
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+          setAuthState('mfa_challenge');
+        } else {
+          setAuthState('authenticated');
+        }
+      } else {
+        setAuthState('unauthenticated');
+      }
+    };
+    checkSession();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      setSession(newSession);
+      if (!newSession) {
+        setAuthState('unauthenticated');
+      } else if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED') {
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+          setAuthState('mfa_challenge');
+        } else if (aal?.currentLevel === 'aal2' || aal?.nextLevel === 'aal1') {
+          setAuthState('authenticated');
+        }
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLoginSuccess = async () => {
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const hasVerifiedTotp = factors?.totp?.some(f => f.status === 'verified');
+    if (!hasVerifiedTotp) {
+      setAuthState('mfa_enroll_prompt');
+    } else {
+      setAuthState('authenticated');
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setAuthState('unauthenticated');
+    setHistory([]);
+    setReport(null);
+    navigate('/');
+  };
+
   const loadHistory = async () => {
     try {
       const reports = await getReports({ sortBy: 'newest' });
@@ -87,6 +150,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    if (authState !== 'authenticated') return;
     const checkKey = async () => {
       if (window.aistudio) {
         const selected = await window.aistudio.hasSelectedApiKey();
@@ -159,7 +223,7 @@ const App: React.FC = () => {
     }, 500);
     
     return () => clearInterval(checkScripts);
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
     const workspaceRoutes = ['/summary', '/treatment', '/darp'];
@@ -276,6 +340,44 @@ const App: React.FC = () => {
     activeReportTab,
   };
 
+  if (authState === 'loading') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <i className="fa-solid fa-circle-notch animate-spin text-teal-600 text-3xl"></i>
+          <p className="font-bold text-teal-800/60 text-sm">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (authState === 'unauthenticated') {
+    return (
+      <Login
+        onLogin={handleLoginSuccess}
+        onMfaRequired={() => setAuthState('mfa_challenge')}
+      />
+    );
+  }
+
+  if (authState === 'mfa_challenge') {
+    return (
+      <MfaChallenge
+        onVerified={() => setAuthState('authenticated')}
+        onCancel={() => setAuthState('unauthenticated')}
+      />
+    );
+  }
+
+  if (authState === 'mfa_enroll_prompt') {
+    return (
+      <MfaEnroll
+        onComplete={() => setAuthState('authenticated')}
+        onSkip={() => setAuthState('authenticated')}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#FBFDFF] pb-32 overflow-x-hidden">
       <Header 
@@ -292,6 +394,8 @@ const App: React.FC = () => {
         linkedEmail={linkedEmail}
         onLinkDrive={handleLinkDrive}
         isLinking={isLinking}
+        onSignOut={handleSignOut}
+        userEmail={session?.user?.email || null}
       />
       
       <main className="flex-grow container mx-auto px-4 lg:px-10 py-12 relative">

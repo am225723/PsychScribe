@@ -1,7 +1,7 @@
 # PsychScribe AI - Clinical Intake Specialist
 
 ## Overview
-PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrative psychiatry. It uses Google Gemini AI to transform raw intake data into exhaustive clinical reports. The app supports three document types: Intake Summary Reports, Treatment Plans, and DARP Session Notes. Uses Supabase PostgreSQL for persistent patient records and report history. Includes Google Drive integration for archival sync, a chatbot assistant, batch processing, and multiple documentation/safety pages.
+PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrative psychiatry. It uses Google Gemini AI to transform raw intake data into exhaustive clinical reports. The app supports three document types: Intake Summary Reports, Treatment Plans, and DARP Session Notes. Uses Supabase PostgreSQL for persistent patient records and report history. Includes Google Drive integration for archival sync, a chatbot assistant, batch processing, and multiple documentation/safety pages. Protected by Supabase Auth with email/password login and optional TOTP two-factor authentication (Google Authenticator).
 
 ## Tech Stack
 - **Frontend**: React 19, TypeScript, Vite 6
@@ -9,6 +9,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - **AI**: Google Gemini via `@google/genai`
 - **Database**: Supabase PostgreSQL (patients + reports tables)
 - **PDF**: jspdf
+- **Auth**: Supabase Auth (email/password + TOTP MFA)
 - **Routing**: react-router-dom v7
 
 ## Project Structure
@@ -17,7 +18,10 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/App.tsx` - Main app component with routing and state management
 - `/components/Dashboard.tsx` - Home page with 3 document type cards + batch processing card
 - `/components/DocumentWorkspace.tsx` - Reusable workspace for all document types (summary/treatment/darp)
-- `/components/Header.tsx` - Top header with System Ready + Drive Sync indicators, bottom navigation bar
+- `/components/Header.tsx` - Top header with System Ready + Drive Sync indicators, sign-out button, bottom navigation bar
+- `/components/Login.tsx` - Email/password sign-in and sign-up form
+- `/components/MfaChallenge.tsx` - 6-digit TOTP code entry after login (Google Authenticator)
+- `/components/MfaEnroll.tsx` - QR code enrollment for TOTP MFA setup
 - `/components/ReportView.tsx` - Report display with tabs and Google Drive save (PatientForms folder structure)
 - `/components/Vault.tsx` - Patient archives with search, filters, date range, and sorting
 - `/components/BatchProcessing.tsx` - Multi-file batch processing with sequential AI analysis and auto-save
