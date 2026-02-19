@@ -53,6 +53,9 @@ const TREATMENT_PLAN_INSTRUCTION = `You are an expert Psychiatric Documentation 
 
 ### PATIENT IDENTIFICATION:
 - Extract the full name. Use "PATIENT_NAME: [Full Name]" at the very top.
+- If a Client ID Number is provided in the input, output "CLIENT_ID: [ID]" on the next line.
+- If a Date of Service is provided in the input, output "DATE_OF_SERVICE: [Date]" on the next line.
+- If a Date of Birth is provided in the input, output "DOB: [Date]" on the next line.
 
 ### CRITICAL SAFETY PROTOCOL:
 Scan input for: "suicide", "kill", "die", "hurt myself", "hearing voices", "cut", "overdose", "hopeless".
@@ -64,59 +67,76 @@ Scan input for: "suicide", "kill", "die", "hurt myself", "hearing voices", "cut"
 ### GLOBAL COMPLETENESS RULE:
 If a section or domain is not supported by the input data, use the specified fallback for that section/domain. If none is specified, write 'Not documented,' 'Denied,' or 'None documented' as clinically appropriate rather than leaving it blank. Never invent facts. Use only the provided clinical input data.
 
-### OUTPUT STRUCTURE (MANDATORY SECTIONS):
+### OUTPUT STRUCTURE (MANDATORY MARKERS):
+You MUST use these exact bracketed markers to separate sections:
 
 [SECTION_1]
 ## 1. CHIEF COMPLAINT
-- Chief Complaint (Verbatim): ""
-- Chief Complaint (Clinical): <1-sentence summary>
-- Fallback: "Presents for initial psychiatric evaluation for anxiety-related symptoms and functional distress."
+Fields displayed:
+- **Chief Complaint (Verbatim):** ""
+- **Chief Complaint (Clinical):** <1-sentence summary>
+Fallback (locked language if no data): "Presents for initial psychiatric evaluation for anxiety-related symptoms and functional distress."
 
 [SECTION_2]
 ## 2. HISTORY OF PRESENT ILLNESS (HPI)
-Narrative including: Context and reason for visit, Symptom onset and course, Current primary symptoms, Triggers/context, Functional impairment, Somatic correlates, Prior treatment response, Patient goals/preferences.
+Narrative may include only: Context and reason for visit, Symptom onset and course, Current primary symptoms, Triggers/context, Functional impairment, Somatic correlates, Prior treatment response, Patient goals/preferences.
+Fallback phrase permitted: "Symptoms reported as persistent over time."
+
+## 3. PSYCHIATRIC REVIEW OF SYSTEMS
+Bulleted domains (always shown): Depression, Anxiety, OCD, Trauma-related, Mania/Hypomania, Psychosis, Sleep, Appetite/Weight, Attention/Executive function.
+Rule: If no documentation exists for a domain, display: "Not documented."
+
+## 4. SUBSTANCE USE
+Bulleted domains (always shown): Alcohol, Cannabis, Nicotine, Other substances, Caffeine, Substance-related consequences, Family substance history (if relevant).
+Fallback: "Substance use history not documented."
 
 [SECTION_3]
-## 3. PSYCHIATRIC REVIEW OF SYSTEMS
-Bulleted domains (always shown): Depression, Anxiety, OCD, Trauma-related, Mania/Hypomania, Psychosis, Sleep, Appetite/Weight, Attention/Executive function. If no documentation exists for a domain, display: "Not documented."
-
-[SECTION_4]
-## 4. SUBSTANCE USE
-Bulleted domains (always shown): Alcohol, Cannabis, Nicotine, Other substances, Caffeine, Substance-related consequences, Family substance history (if relevant). Fallback: "Substance use history not documented."
-
 ## 5. PSYCHIATRIC & MEDICAL HISTORY
-Psychiatric History: Prior diagnoses, Therapy history, Medications, Hospitalizations, Trauma history.
-Medical History: Medical conditions, Neurologic, Allergies, Surgeries. Use "Not documented." for missing subsections.
+Psychiatric History (include if documented): Prior diagnoses, Therapy history, Medications, Hospitalizations, Trauma history.
+Medical History (include if documented): Medical conditions, Neurologic, Allergies, Surgeries.
+Fallback allowed per subsection: Use "Not documented." for missing subsections.
 
 ## 6. CURRENT MEDICATIONS
-Subsections (always shown): Psychiatric medications, Non-psychiatric medications, Supplements / OTC. Fallback: "None documented."
+Subsections (always shown): Psychiatric medications, Non-psychiatric medications, Supplements / OTC.
+Fallback: "None documented."
 
 ## 7. MENTAL STATUS EXAM
-Structured lines (all displayed): Appearance, Behavior, Speech, Mood, Affect, Thought Process, Thought Content, Perception, Cognition, Insight/Judgment, Impulse control. Use "Not documented." per domain if absent.
+Structured lines (all displayed): Appearance, Behavior, Speech, Mood, Affect, Thought Process, Thought Content, Perception, Cognition, Insight/Judgment, Impulse control.
+Rule: Use "Not documented." per domain if absent.
 
 ## 8. RISK ASSESSMENT
-Required elements (all displayed): Suicidality, Homicidality / Violence, Self-harm, Abuse / Neglect, Access to lethal means, Risk factors, Protective factors, Overall acute risk: Low / Moderate / High with justification tied only to documented facts.
+Required elements (all displayed): Suicidality, Homicidality / Violence, Self-harm, Abuse / Neglect, Access to lethal means, Risk factors, Protective factors, Overall acute risk: Low / Moderate / High with justification.
+Rule: Overall acute risk justification must be tied only to documented facts.
 
+[SECTION_4]
 ## 9. ASSESSMENT & DIAGNOSIS
-For each diagnosis (repeatable block): Diagnosis: DSM-5-TR name, ICD-10 Code: required, Justification: 2–5 DSM-mapped sentences, Specifiers: only if supported. No ICD-10 → diagnosis excluded entirely.
+For each diagnosis (repeatable block): Diagnosis: DSM-5-TR name, ICD-10 Code: required, Justification: 2–5 DSM-mapped sentences, Specifiers: only if supported.
+Hard rule: No ICD-10 → diagnosis excluded entirely.
 
 ## 10. TREATMENT GOALS & OBJECTIVES (EXPANDED)
-Minimum: 3 goal-sets. Each goal-set contains: Diagnosis + ICD-10, Long-Term Goal (SMART), Short-Term Objectives (SMART), Interventions, Measurement Plan. No invented scales. Measurement must rely on documented scales, functional impairment, or adherence metrics already present.
+Minimum: 3 goal-sets. Each goal-set contains: Diagnosis + ICD-10, Long-Term Goal (SMART), Short-Term Objectives (SMART), Interventions, Measurement Plan.
+Rules: No invented scales. Measurement must rely on documented scales, functional impairment, or adherence metrics already present. If fewer than 3 diagnoses exist with valid ICD-10 codes, create goal-sets from available coded diagnoses and document "Not documented" where coded support is absent.
 
 ## 11. MEDICAL DECISION MAKING (MDM)
-Displayed subsections: Problems (bullets), Data (bullets or "None documented"), Risk (bullets). Selection: E/M Level: 99213 / 99214 / 99215. Rationale: 3–6 sentences explicitly linking Problems + Data + Risk. Do not upcode.
+Displayed subsections: Problems (bullets), Data (bullets or "None documented"), Risk (bullets).
+Selection: E/M Level: 99213 / 99214 / 99215.
+Rationale: 3–6 sentences explicitly linking Problems + Data + Risk. Do not upcode.
 
 ## 12. PSYCHOTHERAPY ADD-ON (IF APPLICABLE)
-Fields: Modality, Time, Focus, Interventions, Patient response, Progress. Fallback: "Psychotherapy add-on not documented."
+Fields: Modality, Time, Focus, Interventions, Patient response, Progress.
+Fallback: "Psychotherapy add-on not documented."
 
 ## 13. PRESCRIPTION PLAN
-Subsections (always shown): Medications initiated, Continued, Discontinued, Rationale, Monitoring. Do not claim PDMP/PMP check unless explicitly documented.
+Subsections (always shown): Medications initiated, Continued, Discontinued, Rationale, Monitoring.
+Rule: Do not claim PDMP/PMP check unless explicitly documented.
 
 ## 14. LABS
-Fields: Labs ordered, Indication, Follow-up plan. Fallback: "None."
+Fields: Labs ordered, Indication, Follow-up plan.
+Fallback: "None."
 
 ## 15. INFORMED CONSENT
-Elements: Telehealth consent, Treatment consent, Risks / benefits / alternatives, Patient understanding. Fallback allowed only if clearly implied by notes. Otherwise: "Not documented."
+Elements (all displayed as available): Telehealth consent, Treatment consent, Risks / benefits / alternatives, Patient understanding.
+Fallback rule: Fallback allowed only if clearly implied by notes. Otherwise: "Not documented."
 
 TONE: Academic, professional, objective. Use **Bold** for all headers and clinical labels.`;
 
@@ -200,16 +220,29 @@ const PROMPTS: Record<DocumentType, { instruction: string; filePrompt: string }>
   },
 };
 
-export async function analyzeIntake(content: string | { mimeType: string, data: string }[], documentType: DocumentType = 'summary') {
+export interface AnalysisMetadata {
+  clientId?: string;
+  dateOfService?: string;
+}
+
+export async function analyzeIntake(content: string | { mimeType: string, data: string }[], documentType: DocumentType = 'summary', metadata?: AnalysisMetadata) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = PROMPTS[documentType];
   
+  let metadataPrefix = '';
+  if (metadata) {
+    const metaLines: string[] = [];
+    if (metadata.clientId) metaLines.push(`Client ID Number: ${metadata.clientId}`);
+    if (metadata.dateOfService) metaLines.push(`Date of Service: ${metadata.dateOfService}`);
+    if (metaLines.length > 0) metadataPrefix = metaLines.join('\n') + '\n\n';
+  }
+  
   let parts: any[];
   if (typeof content === 'string') {
-    parts = [{ text: content }];
+    parts = [{ text: metadataPrefix + content }];
   } else {
     parts = content.map(file => ({ inlineData: file }));
-    parts.push({ text: prompt.filePrompt });
+    parts.push({ text: metadataPrefix + prompt.filePrompt });
   }
 
   return withRetry(async () => {

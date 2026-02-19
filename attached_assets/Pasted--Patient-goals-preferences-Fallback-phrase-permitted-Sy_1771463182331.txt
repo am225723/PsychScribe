@@ -1,0 +1,208 @@
+	•	Patient goals/preferences
+
+Fallback phrase permitted:
+“Symptoms reported as persistent over time.”
+
+⸻
+
+3. PSYCHIATRIC REVIEW OF SYSTEMS
+
+Bulleted domains (always shown):
+	•	Depression
+	•	Anxiety
+	•	OCD
+	•	Trauma-related
+	•	Mania/Hypomania
+	•	Psychosis
+	•	Sleep
+	•	Appetite/Weight
+	•	Attention/Executive function
+
+Rule:
+If no documentation exists for a domain, display: “Not documented.”
+
+⸻
+
+4. SUBSTANCE USE
+
+Bulleted domains (always shown):
+	•	Alcohol
+	•	Cannabis
+	•	Nicotine
+	•	Other substances
+	•	Caffeine
+	•	Substance-related consequences
+	•	Family substance history (if relevant)
+
+Fallback:
+“Substance use history not documented.”
+
+⸻
+
+5. PSYCHIATRIC & MEDICAL HISTORY
+
+Psychiatric History (include if documented):
+	•	Prior diagnoses
+	•	Therapy history
+	•	Medications
+	•	Hospitalizations
+	•	Trauma history
+
+Medical History (include if documented):
+	•	Medical conditions
+	•	Neurologic
+	•	Allergies
+	•	Surgeries
+
+Fallback allowed per subsection:
+Use “Not documented.” for missing subsections.
+
+⸻
+
+6. CURRENT MEDICATIONS
+
+Subsections (always shown):
+	•	Psychiatric medications
+	•	Non-psychiatric medications
+	•	Supplements / OTC
+
+Fallback:
+“None documented.”
+
+⸻
+
+7. MENTAL STATUS EXAM
+
+Structured lines (all displayed):
+	•	Appearance
+	•	Behavior
+	•	Speech
+	•	Mood
+	•	Affect
+	•	Thought Process
+	•	Thought Content
+	•	Perception
+	•	Cognition
+	•	Insight/Judgment
+	•	Impulse control
+
+Rule:
+Use “Not documented.” per domain if absent.
+
+⸻
+
+8. RISK ASSESSMENT
+
+Required elements (all displayed):
+	•	Suicidality
+	•	Homicidality / Violence
+	•	Self-harm
+	•	Abuse / Neglect
+	•	Access to lethal means
+	•	Risk factors
+	•	Protective factors
+	•	Overall acute risk: Low / Moderate / High with justification
+
+Rule:
+Overall acute risk justification must be tied only to documented facts.
+
+⸻
+
+9. ASSESSMENT & DIAGNOSIS
+
+For each diagnosis (repeatable block):
+	•	Diagnosis: DSM-5-TR name
+	•	ICD-10 Code: required
+	•	Justification: 2–5 DSM-mapped sentences
+	•	Specifiers: only if supported
+
+Hard rule:
+No ICD-10 → diagnosis excluded entirely.
+
+⸻
+
+10. TREATMENT GOALS & OBJECTIVES (EXPANDED)
+
+Minimum: 3 goal-sets. Each goal-set contains:
+	•	Diagnosis + ICD-10
+	•	Long-Term Goal (SMART)
+	•	Short-Term Objectives (SMART)
+	•	Interventions
+	•	Measurement Plan
+
+Rules:
+	•	No invented scales
+	•	Measurement must rely on documented scales, functional impairment, or adherence metrics already present
+
+If fewer than 3 diagnoses exist with valid ICD-10 codes, create goal-sets from available coded diagnoses and document “Not documented” where coded support is absent.
+
+⸻
+
+11. MEDICAL DECISION MAKING (MDM)
+
+Displayed subsections:
+	•	Problems (bullets)
+	•	Data (bullets or “None documented”)
+	•	Risk (bullets)
+
+Selection:
+	•	E/M Level: 99213 / 99214 / 99215
+
+Rationale:
+3–6 sentences explicitly linking Problems + Data + Risk. Do not upcode.
+
+⸻
+
+12. PSYCHOTHERAPY ADD-ON (IF APPLICABLE)
+
+Fields:
+	•	Modality
+	•	Time
+	•	Focus
+	•	Interventions
+	•	Patient response
+	•	Progress
+
+Fallback:
+“Psychotherapy add-on not documented.”
+
+⸻
+
+13. PRESCRIPTION PLAN
+
+Subsections (always shown):
+	•	Medications initiated
+	•	Continued
+	•	Discontinued
+	•	Rationale
+	•	Monitoring
+
+Rule:
+Do not claim PDMP/PMP check unless explicitly documented.
+
+⸻
+
+14. LABS
+
+Fields:
+	•	Labs ordered
+	•	Indication
+	•	Follow-up plan
+
+Fallback:
+“None.”
+
+⸻
+
+15. INFORMED CONSENT
+
+Elements (all displayed as available):
+	•	Telehealth consent
+	•	Treatment consent
+	•	Risks / benefits / alternatives
+	•	Patient understanding
+
+Fallback rule:
+Fallback allowed only if clearly implied by notes. Otherwise: “Not documented.”
+
+⸻

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { ReportView } from './ReportView';
 import { FileData } from '../types';
 import { ReportTab } from '../App';
+import type { AnalysisMetadata } from '../services/geminiService';
 
 export type DocumentType = 'summary' | 'treatment' | 'darp';
 
@@ -12,7 +13,7 @@ interface DocumentWorkspaceProps {
   isDriveLinked: boolean;
   linkedEmail: string | null;
   accessToken: string | null;
-  onProcess: (input: string | FileData[]) => void;
+  onProcess: (input: string | FileData[], metadata?: AnalysisMetadata) => void;
   error: { message: string; isQuota: boolean } | null;
   activeReportTab: ReportTab;
 }
@@ -90,6 +91,8 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
   const [activeTab, setActiveTab] = useState(config.inputTabs[0].id);
   const [files, setFiles] = useState<FileData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [clientId, setClientId] = useState('');
+  const [dateOfService, setDateOfService] = useState('');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -119,10 +122,13 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const metadata: AnalysisMetadata | undefined = documentType === 'treatment' && (clientId.trim() || dateOfService.trim())
+      ? { clientId: clientId.trim() || undefined, dateOfService: dateOfService.trim() || undefined }
+      : undefined;
     if (activeTab === 'text' && text.trim()) {
-      onProcess(text);
+      onProcess(text, metadata);
     } else if ((activeTab === 'file' || activeTab === 'audio') && files.length > 0) {
-      onProcess(files);
+      onProcess(files, metadata);
     }
   };
 
@@ -267,6 +273,40 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
                         </button>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {documentType === 'treatment' && (
+                  <div className="bg-teal-50/30 rounded-[2rem] border border-teal-100/50 p-6 space-y-4 animate-in fade-in duration-300">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center">
+                        <i className="fa-solid fa-id-card text-emerald-700 text-xs"></i>
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/50">Service Identification</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-2">Client ID Number</label>
+                        <input
+                          type="text"
+                          value={clientId}
+                          onChange={(e) => setClientId(e.target.value)}
+                          placeholder="Enter Client ID..."
+                          className="w-full px-5 py-3 rounded-xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15 transition-all"
+                          disabled={isProcessing}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-2">Date of Service</label>
+                        <input
+                          type="date"
+                          value={dateOfService}
+                          onChange={(e) => setDateOfService(e.target.value)}
+                          className="w-full px-5 py-3 rounded-xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15 transition-all"
+                          disabled={isProcessing}
+                        />
+                      </div>
+                    </div>
                   </div>
                 )}
 

@@ -32,9 +32,18 @@ export const ReportView: React.FC<ReportViewProps> = ({
   
   const patientData = useMemo(() => {
     const nameMatch = report.match(/PATIENT_NAME:\s*(.*)/i);
-    const fullName = nameMatch ? nameMatch[1].trim() : "Unknown Patient";
-    const initials = fullName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 3);
-    return { fullName, initials };
+    const fullName = nameMatch ? nameMatch[1].trim().replace(/\*+/g, '') : "Unknown Patient";
+    const nameParts = fullName.split(' ').filter(n => n.length > 0);
+    const firstInitial = nameParts[0]?.[0]?.toUpperCase() || 'X';
+    const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1][0].toUpperCase() : 'X';
+    const initials = firstInitial + lastInitial;
+    const clientIdMatch = report.match(/CLIENT_ID:\s*(.*)/i);
+    const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : '';
+    const dosMatch = report.match(/DATE_OF_SERVICE:\s*(.*)/i);
+    const dateOfService = dosMatch ? dosMatch[1].trim().replace(/\*+/g, '') : '';
+    const dobMatch = report.match(/DOB:\s*(.*)/i);
+    const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : '';
+    return { fullName, initials, clientId, dateOfService, dob };
   }, [report]);
 
   const triggerQuotes = useMemo(() => {
@@ -145,6 +154,31 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
       addHeader();
 
+      if (documentType === 'treatment' && (patientData.clientId || patientData.dateOfService || patientData.dob)) {
+        const headerTableData = [
+          [`Patient Name: ${patientData.fullName}`, `DOB: ${patientData.dob || 'Not documented'}`],
+          [`Client ID: ${patientData.clientId || 'Not documented'}`, `Provider: Douglas Zelisko, M.D.`],
+          [`Date of Service: ${patientData.dateOfService || 'Not documented'}`, `Service Type: Initial Psychiatrist Appointment`],
+        ];
+        const colWidth = maxLineWidth / 2;
+        const rowHeight = 8;
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(0.5);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(0, 0, 0);
+        headerTableData.forEach((row) => {
+          checkNewPage(rowHeight + 2);
+          row.forEach((cell, ci) => {
+            const x = margin + ci * colWidth;
+            doc.rect(x, y - 5, colWidth, rowHeight);
+            doc.text(cell, x + 3, y);
+          });
+          y += rowHeight;
+        });
+        y += 6;
+      }
+
       if (isUrgent) {
         doc.setFillColor(255, 235, 235);
         doc.rect(margin - 2, y - 5, maxLineWidth + 4, 25, 'F');
@@ -166,7 +200,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
         const lines = content.split('\n');
         lines.forEach((line, i) => {
           const trimmed = line.trim();
-          if (!trimmed || trimmed.includes('PATIENT_NAME') || trimmed.includes('URGENT SAFETY ALERT')) return;
+          if (!trimmed || trimmed.includes('PATIENT_NAME') || trimmed.includes('CLIENT_ID') || trimmed.includes('DATE_OF_SERVICE') || trimmed.match(/^DOB:/i) || trimmed.includes('URGENT SAFETY ALERT')) return;
 
           if (trimmed.startsWith('#')) {
             const h = trimmed.replace(/^#+\s*/, '');
@@ -200,23 +234,78 @@ export const ReportView: React.FC<ReportViewProps> = ({
         });
       };
 
-      addSectionTitle("1. Clinical Brief & Synthesis");
-      processContentBlock(sections.clinicalReport, 'clinical-report');
-      addSectionTitle("2. Detailed Review of Systems");
-      processContentBlock(sections.extendedRecord, 'extended-record');
-      addSectionTitle("3. Impressions & Reasoning");
-      processContentBlock(sections.impressions, 'impressions');
-      addSectionTitle("4. Proposed Treatment Strategy");
-      processContentBlock(sections.treatmentPlan, 'treatment-plan');
+      if (documentType === 'darp') {
+        addSectionTitle("DATA");
+        processContentBlock(sections.clinicalReport, 'darp-data');
+        addSectionTitle("ASSESSMENT");
+        processContentBlock(sections.extendedRecord, 'darp-assessment');
+        addSectionTitle("RESPONSE");
+        processContentBlock(sections.impressions, 'darp-response');
+        addSectionTitle("PLAN");
+        processContentBlock(sections.treatmentPlan, 'darp-plan');
+        if (sections.icd10) {
+          addSectionTitle("ICD-10 CODE SUGGESTIONS");
+          processContentBlock(sections.icd10, 'darp-icd10');
+        }
+        if (sections.cpt) {
+          addSectionTitle("CPT CODE SUGGESTIONS");
+          processContentBlock(sections.cpt, 'darp-cpt');
+        }
+      } else {
+        addSectionTitle("1. Clinical Brief & Synthesis");
+        processContentBlock(sections.clinicalReport, 'clinical-report');
+        addSectionTitle("2. Detailed Review of Systems");
+        processContentBlock(sections.extendedRecord, 'extended-record');
+        addSectionTitle("3. Impressions & Reasoning");
+        processContentBlock(sections.impressions, 'impressions');
+        addSectionTitle("4. Proposed Treatment Strategy");
+        processContentBlock(sections.treatmentPlan, 'treatment-plan');
+      }
+
       addFooter(doc.internal.pages.length - 1);
 
-      const blob = doc.output('blob');
-      setPdfBlob(blob);
-      setPdfUrl(URL.createObjectURL(blob));
+      const finalizePdf = (signatureImg?: HTMLImageElement) => {
+        if (signatureImg) {
+          checkNewPage(40);
+          y += 10;
+          addText("Provider Signature:", 10, true, false, [15, 60, 60]);
+          y += 2;
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = signatureImg.naturalWidth;
+            canvas.height = signatureImg.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(signatureImg, 0, 0);
+              const sigData = canvas.toDataURL('image/png');
+              const sigWidth = 50;
+              const sigHeight = (signatureImg.naturalHeight / signatureImg.naturalWidth) * sigWidth;
+              doc.addImage(sigData, 'PNG', margin, y, sigWidth, sigHeight);
+              y += sigHeight + 5;
+            }
+          } catch (e) {}
+          addText("Douglas Zelisko, M.D.", 10, true, false, [0, 0, 0]);
+          addText("Integrative Psychiatry", 9, false, false, [100, 100, 100]);
+        }
+
+        const blob = doc.output('blob');
+        setPdfBlob(blob);
+        setPdfUrl(URL.createObjectURL(blob));
+      };
+
+      if (documentType === 'treatment') {
+        const sigImg = new Image();
+        sigImg.crossOrigin = 'anonymous';
+        sigImg.onload = () => finalizePdf(sigImg);
+        sigImg.onerror = () => finalizePdf();
+        sigImg.src = 'https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/dzsignature.png';
+      } else {
+        finalizePdf();
+      }
     };
 
     if (sections.clinicalReport) generatePDF();
-  }, [sections, patientData, isUrgent, triggerQuotes, answers]);
+  }, [sections, patientData, isUrgent, triggerQuotes, answers, documentType]);
 
   const findOrCreateFolder = async (name: string, parentId?: string): Promise<string> => {
     if (!accessToken) throw new Error("Not authenticated");
@@ -340,7 +429,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     const lines = text.split('\n');
     return lines.map((line, i) => {
       const trimmedLine = line.trim();
-      if (!trimmedLine || trimmedLine.includes('PATIENT_NAME') || trimmedLine.includes('URGENT SAFETY ALERT')) return null;
+      if (!trimmedLine || trimmedLine.includes('PATIENT_NAME') || trimmedLine.includes('CLIENT_ID') || trimmedLine.includes('DATE_OF_SERVICE') || trimmedLine.match(/^DOB:/i) || trimmedLine.includes('URGENT SAFETY ALERT')) return null;
 
       const answerKey = `${sectionPrefix}-${i}`;
       const isQuestion = trimmedLine.startsWith('- ') || trimmedLine.startsWith('* ') || trimmedLine.startsWith('• ') || trimmedLine.endsWith('?') || trimmedLine.endsWith(':');
@@ -605,12 +694,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
                     <i className="fa-solid fa-file-pdf text-2xl"></i>
                   </div>
                   <div>
-                    <h3 className="text-white font-black uppercase text-sm tracking-[0.3em]">{patientData.initials}_Clinical_Scribe_Synthesis.pdf</h3>
+                    <h3 className="text-white font-black uppercase text-sm tracking-[0.3em]">{patientData.initials}_{documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? 'SessionNote' : 'ClinicalSynthesis'}.pdf</h3>
                     <p className="text-[10px] font-bold text-teal-400/50 uppercase tracking-[0.2em]">Ready for medical archival</p>
                   </div>
                 </div>
                 {pdfUrl && (
-                  <a href={pdfUrl} download={`${patientData.initials}_Psych_Brief.pdf`} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-900/40 active:scale-95 flex items-center gap-3">
+                  <a href={pdfUrl} download={`${patientData.initials}_${documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? 'SessionNote' : 'ClinicalSynthesis'}.pdf`} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-900/40 active:scale-95 flex items-center gap-3">
                     <i className="fa-solid fa-download"></i>
                     Export PDF
                   </a>

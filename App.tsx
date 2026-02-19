@@ -12,7 +12,7 @@ import { ProgressBar } from './components/ProgressBar';
 import { ChatBot } from './components/ChatBot';
 import { analyzeIntake } from './services/geminiService';
 import { FileData } from './types';
-import type { DocumentType } from './services/geminiService';
+import type { DocumentType, AnalysisMetadata } from './services/geminiService';
 
 export type Page = 'home' | 'vault' | 'docs' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
@@ -194,14 +194,14 @@ const App: React.FC = () => {
   };
 
   const createProcessHandler = (docType: DocumentType) => {
-    return async (input: string | FileData[]) => {
+    return async (input: string | FileData[], metadata?: AnalysisMetadata) => {
       setIsProcessing(true);
       setError(null);
       
       try {
         const result = typeof input === 'string' 
-          ? await analyzeIntake(input, docType)
-          : await analyzeIntake(input.map(f => ({ mimeType: f.mimeType, data: f.base64 })), docType);
+          ? await analyzeIntake(input, docType, metadata)
+          : await analyzeIntake(input.map(f => ({ mimeType: f.mimeType, data: f.base64 })), docType, metadata);
 
         setReport(result);
         setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
