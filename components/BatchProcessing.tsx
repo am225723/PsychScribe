@@ -16,12 +16,22 @@ interface GroupFile {
   fileData: FileData;
 }
 
+interface Session {
+  id: string;
+  dateOfService: string;
+  files: GroupFile[];
+  status: 'queued' | 'processing' | 'completed' | 'error';
+  patientName?: string;
+  error?: string;
+}
+
 interface ClientGroup {
   id: string;
   documentType: DocumentType;
   files: GroupFile[];
   clientId: string;
   dateOfService: string;
+  sessions: Session[];
   status: 'queued' | 'processing' | 'completed' | 'error';
   patientName?: string;
   error?: string;
@@ -41,6 +51,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
       files: [],
       clientId: '',
       dateOfService: '',
+      sessions: [],
       status: 'queued',
     };
     setGroups(prev => [...prev, newGroup]);
@@ -53,10 +64,49 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
   };
 
   const updateGroup = (groupId: string, updates: Partial<ClientGroup>) => {
+    if (updates.documentType === 'darp') {
+      const group = groups.find(g => g.id === groupId);
+      if (group && group.documentType !== 'darp' && group.sessions.length === 0) {
+        updates.sessions = [{
+          id: `session-${Date.now()}`,
+          dateOfService: '',
+          files: [],
+          status: 'queued',
+        }];
+      }
+    } else if (updates.documentType && updates.documentType !== 'darp') {
+      updates.sessions = [];
+    }
     setGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...updates } : g));
   };
 
-  const handleFilesForGroup = async (groupId: string, selectedFiles: FileList) => {
+  const addSession = (groupId: string) => {
+    const newSession: Session = {
+      id: `session-${Date.now()}`,
+      dateOfService: '',
+      files: [],
+      status: 'queued',
+    };
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, sessions: [...g.sessions, newSession] } : g
+    ));
+  };
+
+  const removeSession = (groupId: string, sessionId: string) => {
+    setGroups(prev => prev.map(g =>
+      g.id === groupId ? { ...g, sessions: g.sessions.filter(s => s.id !== sessionId) } : g
+    ));
+  };
+
+  const updateSession = (groupId: string, sessionId: string, updates: Partial<Session>) => {
+    setGroups(prev => prev.map(g =>
+      g.id === groupId
+        ? { ...g, sessions: g.sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s) }
+        : g
+    ));
+  };
+
+  const readFilesToGroupFiles = async (selectedFiles: FileList): Promise<GroupFile[]> => {
     const newFiles: GroupFile[] = [];
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
@@ -74,10 +124,26 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
         fileData: { mimeType: file.type, base64, name: file.name },
       });
     }
+    return newFiles;
+  };
+
+  const handleFilesForGroup = async (groupId: string, selectedFiles: FileList) => {
+    const newFiles = await readFilesToGroupFiles(selectedFiles);
     setGroups(prev => prev.map(g =>
       g.id === groupId ? { ...g, files: [...g.files, ...newFiles] } : g
     ));
     const ref = fileInputRefs.current[groupId];
+    if (ref) ref.value = '';
+  };
+
+  const handleFilesForSession = async (groupId: string, sessionId: string, selectedFiles: FileList) => {
+    const newFiles = await readFilesToGroupFiles(selectedFiles);
+    setGroups(prev => prev.map(g =>
+      g.id === groupId
+        ? { ...g, sessions: g.sessions.map(s => s.id === sessionId ? { ...s, files: [...s.files, ...newFiles] } : s) }
+        : g
+    ));
+    const ref = fileInputRefs.current[`${groupId}-${sessionId}`];
     if (ref) ref.value = '';
   };
 
@@ -87,11 +153,42 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     ));
   };
 
+  const removeFileFromSession = (groupId: string, sessionId: string, fileId: string) => {
+    setGroups(prev => prev.map(g =>
+      g.id === groupId
+        ? { ...g, sessions: g.sessions.map(s => s.id === sessionId ? { ...s, files: s.files.filter(f => f.id !== fileId) } : s) }
+        : g
+    ));
+  };
+
   const clearAll = () => {
     if (!isRunning) {
       setGroups([]);
       setCompletedCount(0);
     }
+  };
+
+  const processOneReport = async (
+    fileParts: { mimeType: string; data: string }[],
+    documentType: DocumentType,
+    metadata?: AnalysisMetadata
+  ) => {
+    const result = await analyzeIntake(fileParts, documentType, metadata);
+    const nameMatch = result.match(/PATIENT_NAME:\s*(.*)/i);
+    const patientName = nameMatch ? nameMatch[1].trim().replace(/\*+/g, '') : 'Unknown Patient';
+    const clientIdMatch = result.match(/CLIENT_ID:\s*(.*)/i);
+    const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : metadata?.clientId || undefined;
+    const dobMatch = result.match(/DOB:\s*(.*)/i);
+    const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
+
+    try {
+      const patient = await findOrCreatePatient(patientName, dob, clientId);
+      await saveReport(patient.id, documentType, result, result.includes('🚨'));
+    } catch (dbErr) {
+      console.error('Database save error (report still generated):', dbErr);
+    }
+
+    return patientName;
   };
 
   const processBatch = async () => {
@@ -103,45 +200,78 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     for (let i = 0; i < groups.length; i++) {
       if (abortRef.current) break;
       const group = groups[i];
-      if (group.status === 'completed' || group.files.length === 0) {
-        if (group.status === 'completed') completed++;
-        continue;
-      }
 
-      setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'processing' } : g));
-
-      try {
-        const fileParts = group.files.map(f => ({
-          mimeType: f.fileData.mimeType,
-          data: f.fileData.base64,
-        }));
-
-        const metadata: AnalysisMetadata | undefined =
-          (group.documentType === 'treatment' || group.documentType === 'darp') && (group.clientId || group.dateOfService)
-            ? { clientId: group.clientId || undefined, dateOfService: group.dateOfService || undefined }
-            : undefined;
-
-        const result = await analyzeIntake(fileParts, group.documentType, metadata);
-
-        const nameMatch = result.match(/PATIENT_NAME:\s*(.*)/i);
-        const patientName = nameMatch ? nameMatch[1].trim().replace(/\*+/g, '') : 'Unknown Patient';
-        const clientIdMatch = result.match(/CLIENT_ID:\s*(.*)/i);
-        const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : group.clientId || undefined;
-        const dobMatch = result.match(/DOB:\s*(.*)/i);
-        const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
-
-        try {
-          const patient = await findOrCreatePatient(patientName, dob, clientId);
-          await saveReport(patient.id, group.documentType, result, result.includes('🚨'));
-        } catch (dbErr) {
-          console.error('Database save error (report still generated):', dbErr);
+      if (group.documentType === 'darp') {
+        const validSessions = group.sessions.filter(s => s.files.length > 0);
+        if (validSessions.length === 0 || group.status === 'completed') {
+          if (group.status === 'completed') completed++;
+          continue;
         }
 
-        completed++;
+        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'processing' } : g));
+        let allSessionsDone = true;
+        let lastPatientName = '';
+
+        for (let j = 0; j < group.sessions.length; j++) {
+          if (abortRef.current) { allSessionsDone = false; break; }
+          const session = group.sessions[j];
+          if (session.files.length === 0 || session.status === 'completed') continue;
+
+          setGroups(prev => prev.map(g =>
+            g.id === group.id
+              ? { ...g, sessions: g.sessions.map(s => s.id === session.id ? { ...s, status: 'processing' } : s) }
+              : g
+          ));
+
+          try {
+            const fileParts = session.files.map(f => ({ mimeType: f.fileData.mimeType, data: f.fileData.base64 }));
+            const metadata: AnalysisMetadata | undefined = session.dateOfService
+              ? { dateOfService: session.dateOfService }
+              : undefined;
+            const patientName = await processOneReport(fileParts, 'darp', metadata);
+            lastPatientName = patientName;
+
+            setGroups(prev => prev.map(g =>
+              g.id === group.id
+                ? { ...g, sessions: g.sessions.map(s => s.id === session.id ? { ...s, status: 'completed', patientName } : s) }
+                : g
+            ));
+          } catch (err: any) {
+            allSessionsDone = false;
+            setGroups(prev => prev.map(g =>
+              g.id === group.id
+                ? { ...g, sessions: g.sessions.map(s => s.id === session.id ? { ...s, status: 'error', error: err.message || 'Processing failed' } : s) }
+                : g
+            ));
+          }
+        }
+
+        const finalStatus = allSessionsDone ? 'completed' : 'error';
+        if (allSessionsDone) completed++;
         setCompletedCount(completed);
-        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'completed', patientName } : g));
-      } catch (err: any) {
-        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'error', error: err.message || 'Processing failed' } : g));
+        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: finalStatus, patientName: lastPatientName } : g));
+      } else {
+        if (group.status === 'completed' || group.files.length === 0) {
+          if (group.status === 'completed') completed++;
+          continue;
+        }
+
+        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'processing' } : g));
+
+        try {
+          const fileParts = group.files.map(f => ({ mimeType: f.fileData.mimeType, data: f.fileData.base64 }));
+          const metadata: AnalysisMetadata | undefined =
+            group.documentType === 'treatment' && (group.clientId || group.dateOfService)
+              ? { clientId: group.clientId || undefined, dateOfService: group.dateOfService || undefined }
+              : undefined;
+
+          const patientName = await processOneReport(fileParts, group.documentType, metadata);
+          completed++;
+          setCompletedCount(completed);
+          setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'completed', patientName } : g));
+        } catch (err: any) {
+          setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'error', error: err.message || 'Processing failed' } : g));
+        }
       }
     }
 
@@ -153,11 +283,39 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     abortRef.current = true;
   };
 
-  const validGroups = groups.filter(g => g.files.length > 0);
-  const queuedCount = validGroups.filter(g => g.status === 'queued').length;
+  const getTotalReportCount = () => {
+    let count = 0;
+    for (const g of groups) {
+      if (g.documentType === 'darp') {
+        count += g.sessions.filter(s => s.files.length > 0).length;
+      } else if (g.files.length > 0) {
+        count += 1;
+      }
+    }
+    return count;
+  };
+
+  const getQueuedCount = () => {
+    let count = 0;
+    for (const g of groups) {
+      if (g.status !== 'queued') continue;
+      if (g.documentType === 'darp') {
+        count += g.sessions.filter(s => s.files.length > 0 && s.status === 'queued').length > 0 ? 1 : 0;
+      } else if (g.files.length > 0) {
+        count += 1;
+      }
+    }
+    return count;
+  };
+
   const doneCount = groups.filter(g => g.status === 'completed').length;
   const errorCount = groups.filter(g => g.status === 'error').length;
-  const progress = validGroups.length > 0 ? (doneCount / validGroups.length) * 100 : 0;
+  const validGroupCount = groups.filter(g => {
+    if (g.documentType === 'darp') return g.sessions.some(s => s.files.length > 0);
+    return g.files.length > 0;
+  }).length;
+  const progress = validGroupCount > 0 ? (doneCount / validGroupCount) * 100 : 0;
+  const queuedCount = getQueuedCount();
 
   const docTypeLabel = (dt: DocumentType) => {
     switch (dt) {
@@ -182,6 +340,51 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
       case 'darp': return { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' };
     }
   };
+
+  const renderFileUpload = (refKey: string, onFiles: (files: FileList) => void, hint: string) => (
+    <div
+      onClick={() => fileInputRefs.current[refKey]?.click()}
+      className="border-2 border-dashed border-teal-100 hover:border-teal-300 hover:bg-teal-50/20 rounded-2xl p-5 text-center cursor-pointer group/upload transition-all"
+    >
+      <input
+        ref={(el) => { fileInputRefs.current[refKey] = el; }}
+        type="file"
+        multiple
+        accept=".pdf,image/*,.doc,.docx"
+        onChange={(e) => { if (e.target.files && e.target.files.length > 0) onFiles(e.target.files); }}
+        className="hidden"
+      />
+      <div className="space-y-1">
+        <div className="w-10 h-10 bg-teal-50 rounded-xl flex items-center justify-center mx-auto group-hover/upload:scale-110 transition-transform">
+          <i className="fa-solid fa-cloud-arrow-up text-teal-400 text-lg"></i>
+        </div>
+        <p className="font-black text-teal-950 uppercase text-xs tracking-widest">Add Documents</p>
+        <p className="text-[10px] font-bold text-teal-800/30 uppercase tracking-[0.2em]">{hint}</p>
+      </div>
+    </div>
+  );
+
+  const renderFileList = (files: GroupFile[], onRemove: (fileId: string) => void) => (
+    files.length > 0 && (
+      <div className="space-y-1.5">
+        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40">
+          {files.length} document{files.length !== 1 ? 's' : ''} attached
+        </span>
+        {files.map(file => (
+          <div key={file.id} className="flex items-center gap-3 py-2 px-3 bg-slate-50 rounded-xl">
+            <i className="fa-solid fa-file text-teal-300 text-sm"></i>
+            <span className="flex-grow text-sm font-bold text-teal-950 truncate">{file.fileName}</span>
+            <button
+              onClick={() => onRemove(file.id)}
+              className="w-6 h-6 rounded-md flex items-center justify-center text-teal-200 hover:text-red-500 hover:bg-red-50 transition-all"
+            >
+              <i className="fa-solid fa-xmark text-xs"></i>
+            </button>
+          </div>
+        ))}
+      </div>
+    )
+  );
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-28">
@@ -234,13 +437,21 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                           : `Client Group ${groupIndex + 1}`}
                       </h3>
                       {group.status === 'error' && (
-                        <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{group.error}</p>
+                        <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{group.error || 'Some sessions failed'}</p>
                       )}
                       {group.status === 'processing' && (
-                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Synthesizing {group.files.length} document{group.files.length !== 1 ? 's' : ''}...</p>
+                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">
+                          {group.documentType === 'darp'
+                            ? `Processing ${group.sessions.length} session note${group.sessions.length !== 1 ? 's' : ''}...`
+                            : `Synthesizing ${group.files.length} document${group.files.length !== 1 ? 's' : ''}...`}
+                        </p>
                       )}
                       {group.status === 'completed' && (
-                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Saved to database</p>
+                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                          {group.documentType === 'darp'
+                            ? `${group.sessions.filter(s => s.status === 'completed').length} session note${group.sessions.filter(s => s.status === 'completed').length !== 1 ? 's' : ''} saved`
+                            : 'Saved to database'}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -276,9 +487,9 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                       })}
                     </div>
 
-                    {(group.documentType === 'treatment' || group.documentType === 'darp') && (
-                      <div className="flex flex-wrap gap-3">
-                        {group.documentType === 'treatment' && (
+                    {group.documentType === 'treatment' && (
+                      <>
+                        <div className="flex flex-wrap gap-3">
                           <div className="flex-1 min-w-[200px]">
                             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Client ID</label>
                             <input
@@ -289,71 +500,118 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                               className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 placeholder:text-teal-300"
                             />
                           </div>
-                        )}
-                        <div className="flex-1 min-w-[200px]">
-                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Date of Service</label>
-                          <input
-                            type="date"
-                            value={group.dateOfService}
-                            onChange={(e) => updateGroup(group.id, { dateOfService: e.target.value })}
-                            className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300"
-                          />
+                          <div className="flex-1 min-w-[200px]">
+                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Date of Service</label>
+                            <input
+                              type="date"
+                              value={group.dateOfService}
+                              onChange={(e) => updateGroup(group.id, { dateOfService: e.target.value })}
+                              className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300"
+                            />
+                          </div>
                         </div>
-                      </div>
+                        {renderFileUpload(group.id, (files) => handleFilesForGroup(group.id, files), '2-5 documents typical')}
+                        {renderFileList(group.files, (fileId) => removeFileFromGroup(group.id, fileId))}
+                      </>
                     )}
 
-                    <div
-                      onClick={() => fileInputRefs.current[group.id]?.click()}
-                      className="border-2 border-dashed border-teal-100 hover:border-teal-300 hover:bg-teal-50/20 rounded-2xl p-6 text-center cursor-pointer group/upload transition-all"
-                    >
-                      <input
-                        ref={(el) => { fileInputRefs.current[group.id] = el; }}
-                        type="file"
-                        multiple
-                        accept=".pdf,image/*,.doc,.docx"
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files.length > 0) {
-                            handleFilesForGroup(group.id, e.target.files);
-                          }
-                        }}
-                        className="hidden"
-                      />
-                      <div className="space-y-2">
-                        <div className="w-12 h-12 bg-teal-50 rounded-xl flex items-center justify-center mx-auto group-hover/upload:scale-110 transition-transform">
-                          <i className="fa-solid fa-cloud-arrow-up text-teal-400 text-xl"></i>
-                        </div>
-                        <p className="font-black text-teal-950 uppercase text-xs tracking-widest">Add Documents</p>
-                        <p className="text-[10px] font-bold text-teal-800/30 uppercase tracking-[0.2em]">
-                          {group.documentType === 'summary' ? '2-3 documents typical' :
-                           group.documentType === 'treatment' ? '2-5 documents typical' :
-                           '1-3 documents typical'}
-                        </p>
-                      </div>
-                    </div>
+                    {group.documentType === 'summary' && (
+                      <>
+                        {renderFileUpload(group.id, (files) => handleFilesForGroup(group.id, files), '2-3 documents typical')}
+                        {renderFileList(group.files, (fileId) => removeFileFromGroup(group.id, fileId))}
+                      </>
+                    )}
 
-                    {group.files.length > 0 && (
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40">
-                          {group.files.length} document{group.files.length !== 1 ? 's' : ''} attached
-                        </span>
-                        {group.files.map(file => (
-                          <div key={file.id} className="flex items-center gap-3 py-2 px-3 bg-slate-50 rounded-xl">
-                            <i className="fa-solid fa-file text-teal-300 text-sm"></i>
-                            <span className="flex-grow text-sm font-bold text-teal-950 truncate">{file.fileName}</span>
-                            <button
-                              onClick={() => removeFileFromGroup(group.id, file.id)}
-                              className="w-6 h-6 rounded-md flex items-center justify-center text-teal-200 hover:text-red-500 hover:bg-red-50 transition-all"
-                            >
-                              <i className="fa-solid fa-xmark text-xs"></i>
-                            </button>
+                    {group.documentType === 'darp' && (
+                      <div className="space-y-3">
+                        {group.sessions.map((session, sIdx) => (
+                          <div key={session.id} className="bg-sky-50/40 rounded-2xl border border-sky-100 p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 bg-sky-100 rounded-lg flex items-center justify-center">
+                                  <span className="text-[10px] font-black text-sky-700">{sIdx + 1}</span>
+                                </div>
+                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-800/60">Session {sIdx + 1}</span>
+                              </div>
+                              {group.sessions.length > 1 && (
+                                <button
+                                  onClick={() => removeSession(group.id, session.id)}
+                                  className="w-6 h-6 rounded-md flex items-center justify-center text-sky-200 hover:text-red-500 hover:bg-red-50 transition-all"
+                                >
+                                  <i className="fa-solid fa-xmark text-xs"></i>
+                                </button>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Date of Service</label>
+                              <input
+                                type="date"
+                                value={session.dateOfService}
+                                onChange={(e) => updateSession(group.id, session.id, { dateOfService: e.target.value })}
+                                className="w-full px-4 py-2.5 rounded-xl border border-sky-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-300"
+                              />
+                            </div>
+                            {renderFileUpload(
+                              `${group.id}-${session.id}`,
+                              (files) => handleFilesForSession(group.id, session.id, files),
+                              '1-3 documents typical'
+                            )}
+                            {renderFileList(session.files, (fileId) => removeFileFromSession(group.id, session.id, fileId))}
                           </div>
                         ))}
+                        <button
+                          onClick={() => addSession(group.id)}
+                          className="w-full py-3 rounded-xl border-2 border-dashed border-sky-200 hover:border-sky-400 bg-white/50 hover:bg-sky-50/30 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2"
+                        >
+                          <i className="fa-solid fa-plus text-xs"></i>
+                          Add Another Session
+                        </button>
                       </div>
                     )}
                   </>
                 )}
 
-                {(group.status === 'completed' || group.status === 'error') && (
+                {group.status !== 'queued' && group.documentType === 'darp' && (
+                  <div className="space-y-2">
+                    {group.sessions.map((session, sIdx) => {
+                      if (session.files.length === 0) return null;
+                      return (
+                        <div key={session.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
+                          session.status === 'processing' ? 'bg-amber-50 border-amber-200' :
+                          session.status === 'completed' ? 'bg-emerald-50 border-emerald-200' :
+                          session.status === 'error' ? 'bg-red-50 border-red-200' :
+                          'bg-sky-50 border-sky-100'
+                        }`}>
+                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black ${
+                            session.status === 'processing' ? 'bg-amber-100 text-amber-700' :
+                            session.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                            session.status === 'error' ? 'bg-red-100 text-red-700' :
+                            'bg-sky-100 text-sky-700'
+                          }`}>
+                            {session.status === 'processing' ? <i className="fa-solid fa-dna animate-spin text-[10px]"></i> :
+                             session.status === 'completed' ? <i className="fa-solid fa-check text-[10px]"></i> :
+                             session.status === 'error' ? <i className="fa-solid fa-xmark text-[10px]"></i> :
+                             <span>{sIdx + 1}</span>}
+                          </div>
+                          <div className="flex-grow">
+                            <span className="text-xs font-black text-teal-950">Session {sIdx + 1}</span>
+                            <span className="text-[10px] font-bold text-teal-800/40 ml-2">
+                              {session.dateOfService || 'No date'} — {session.files.length} doc{session.files.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          {session.status === 'completed' && session.patientName && (
+                            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">{session.patientName}</span>
+                          )}
+                          {session.status === 'error' && (
+                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{session.error}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {(group.status === 'completed' || group.status === 'error') && group.documentType !== 'darp' && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${colors.bg} ${colors.text}`}>
                       <i className={`fa-solid ${docTypeIcon(group.documentType)} mr-1`}></i>
@@ -384,7 +642,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
         <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-xl border border-teal-50 p-6 space-y-3">
           <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em]">
             <span className="text-teal-800/50">Processing Groups</span>
-            <span className="text-teal-800">{doneCount} / {validGroups.length}</span>
+            <span className="text-teal-800">{doneCount} / {validGroupCount}</span>
           </div>
           <div className="h-3 bg-teal-50 rounded-full overflow-hidden">
             <div
@@ -434,7 +692,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
           </div>
           <p className="font-black text-emerald-800 uppercase text-sm tracking-widest">Batch Complete</p>
           <p className="text-[10px] font-bold text-emerald-600/60 uppercase tracking-wider">
-            {doneCount} group{doneCount !== 1 ? 's' : ''} processed successfully{errorCount > 0 ? ` • ${errorCount} failed` : ''} — All saved to patient database
+            {doneCount} group{doneCount !== 1 ? 's' : ''} processed ({getTotalReportCount()} total reports){errorCount > 0 ? ` • ${errorCount} had errors` : ''} — All saved to patient database
           </p>
         </div>
       )}
