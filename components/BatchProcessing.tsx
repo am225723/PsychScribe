@@ -64,7 +64,8 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
   };
 
   const updateGroup = (groupId: string, updates: Partial<ClientGroup>) => {
-    if (updates.documentType === 'darp') {
+    const dt = updates.documentType;
+    if (dt === 'darp') {
       const group = groups.find(g => g.id === groupId);
       if (group && group.documentType !== 'darp' && group.sessions.length === 0) {
         updates.sessions = [{
@@ -74,7 +75,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
           status: 'queued',
         }];
       }
-    } else if (updates.documentType && updates.documentType !== 'darp') {
+    } else if (dt !== undefined) {
       updates.sessions = [];
     }
     setGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...updates } : g));
