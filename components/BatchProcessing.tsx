@@ -117,7 +117,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
         }));
 
         const metadata: AnalysisMetadata | undefined =
-          group.documentType === 'treatment' && (group.clientId || group.dateOfService)
+          (group.documentType === 'treatment' || group.documentType === 'darp') && (group.clientId || group.dateOfService)
             ? { clientId: group.clientId || undefined, dateOfService: group.dateOfService || undefined }
             : undefined;
 
@@ -276,18 +276,20 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                       })}
                     </div>
 
-                    {group.documentType === 'treatment' && (
+                    {(group.documentType === 'treatment' || group.documentType === 'darp') && (
                       <div className="flex flex-wrap gap-3">
-                        <div className="flex-1 min-w-[200px]">
-                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Client ID</label>
-                          <input
-                            type="text"
-                            value={group.clientId}
-                            onChange={(e) => updateGroup(group.id, { clientId: e.target.value })}
-                            placeholder="Enter Client ID"
-                            className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 placeholder:text-teal-300"
-                          />
-                        </div>
+                        {group.documentType === 'treatment' && (
+                          <div className="flex-1 min-w-[200px]">
+                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Client ID</label>
+                            <input
+                              type="text"
+                              value={group.clientId}
+                              onChange={(e) => updateGroup(group.id, { clientId: e.target.value })}
+                              placeholder="Enter Client ID"
+                              className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 placeholder:text-teal-300"
+                            />
+                          </div>
+                        )}
                         <div className="flex-1 min-w-[200px]">
                           <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Date of Service</label>
                           <input

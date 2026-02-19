@@ -365,8 +365,9 @@ export const ReportView: React.FC<ReportViewProps> = ({
     setSaveStatus('saving');
 
     try {
-      const dateStr = new Date().toISOString().split('T')[0];
-      const fileName = `${patientData.fullName.replace(/\s+/g, '_')}_${dateStr}.pdf`;
+      const dateStr = patientData.dateOfService || new Date().toISOString().split('T')[0];
+      const docLabel = documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? 'SessionNote' : 'ClinicalSynthesis';
+      const fileName = `${patientData.fullName.replace(/\s+/g, '_')}_${docLabel}_${dateStr}.pdf`;
       const metadata = {
         name: fileName,
         mimeType: 'application/pdf',
@@ -706,12 +707,12 @@ export const ReportView: React.FC<ReportViewProps> = ({
                     <i className="fa-solid fa-file-pdf text-2xl"></i>
                   </div>
                   <div>
-                    <h3 className="text-white font-black uppercase text-sm tracking-[0.3em]">{patientData.initials}_{documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? 'SessionNote' : 'ClinicalSynthesis'}.pdf</h3>
+                    <h3 className="text-white font-black uppercase text-sm tracking-[0.3em]">{patientData.initials}_{documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? `SessionNote${patientData.dateOfService ? '_' + patientData.dateOfService : ''}` : 'ClinicalSynthesis'}.pdf</h3>
                     <p className="text-[10px] font-bold text-teal-400/50 uppercase tracking-[0.2em]">Ready for medical archival</p>
                   </div>
                 </div>
                 {pdfUrl && (
-                  <a href={pdfUrl} download={`${patientData.initials}_${documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? 'SessionNote' : 'ClinicalSynthesis'}.pdf`} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-900/40 active:scale-95 flex items-center gap-3">
+                  <a href={pdfUrl} download={`${patientData.initials}_${documentType === 'treatment' ? 'TreatmentPlan' : documentType === 'darp' ? `SessionNote${patientData.dateOfService ? '_' + patientData.dateOfService : ''}` : 'ClinicalSynthesis'}.pdf`} className="bg-emerald-600 text-white px-10 py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-900/40 active:scale-95 flex items-center gap-3">
                     <i className="fa-solid fa-download"></i>
                     Export PDF
                   </a>

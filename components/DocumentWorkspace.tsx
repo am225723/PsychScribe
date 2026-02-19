@@ -122,7 +122,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const metadata: AnalysisMetadata | undefined = documentType === 'treatment' && (clientId.trim() || dateOfService.trim())
+    const metadata: AnalysisMetadata | undefined = (documentType === 'treatment' || documentType === 'darp') && (clientId.trim() || dateOfService.trim())
       ? { clientId: clientId.trim() || undefined, dateOfService: dateOfService.trim() || undefined }
       : undefined;
     if (activeTab === 'text' && text.trim()) {
@@ -276,7 +276,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
                   </div>
                 )}
 
-                {documentType === 'treatment' && (
+                {(documentType === 'treatment' || documentType === 'darp') && (
                   <div className="bg-teal-50/30 rounded-[2rem] border border-teal-100/50 p-6 space-y-4 animate-in fade-in duration-300">
                     <div className="flex items-center gap-3 mb-2">
                       <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center">
