@@ -402,8 +402,20 @@ export const ReportView: React.FC<ReportViewProps> = ({
     setSaveStatus('saving');
     try {
       const patientFormsId = await findOrCreateFolder('PatientForms', 'root');
-      const patientFolderId = await findOrCreateFolder(patientData.fullName, patientFormsId);
-      await handleSaveToDrive(patientFolderId);
+
+      const query = `name='${patientData.fullName}' and mimeType='application/vnd.google-apps.folder' and '${patientFormsId}' in parents and trashed=false`;
+      const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`, {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      });
+      const searchData = await searchRes.json();
+
+      if (searchData.files && searchData.files.length > 0) {
+        await handleSaveToDrive(searchData.files[0].id);
+      } else {
+        setSaveStatus('idle');
+        setShowFolderPicker(true);
+        await loadPatientFolders();
+      }
     } catch (error) {
       console.error("Drive upload error", error);
       setSaveStatus('idle');
