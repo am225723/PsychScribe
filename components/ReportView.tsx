@@ -344,7 +344,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     if (!accessToken) return;
     setLoadingFolders(true);
     try {
-      const patientFormsId = await findOrCreateFolder('PatientForms');
+      const patientFormsId = await findOrCreateFolder('PatientForms', 'root');
       
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${patientFormsId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id,name)&orderBy=name`, {
         headers: { Authorization: 'Bearer ' + accessToken }
@@ -401,7 +401,7 @@ export const ReportView: React.FC<ReportViewProps> = ({
     if (!accessToken || !pdfBlob) return;
     setSaveStatus('saving');
     try {
-      const patientFormsId = await findOrCreateFolder('PatientForms');
+      const patientFormsId = await findOrCreateFolder('PatientForms', 'root');
       const patientFolderId = await findOrCreateFolder(patientData.fullName, patientFormsId);
       await handleSaveToDrive(patientFolderId);
     } catch (error) {
