@@ -15,7 +15,7 @@ import { FileData } from './types';
 import type { DocumentType } from './services/geminiService';
 
 export type Page = 'home' | 'vault' | 'docs' | 'safety' | 'hipaa' | 'support';
-export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view';
+export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
 
 export interface ReportHistoryItem {
   id: string;
@@ -204,7 +204,7 @@ const App: React.FC = () => {
           : await analyzeIntake(input.map(f => ({ mimeType: f.mimeType, data: f.base64 })), docType);
 
         setReport(result);
-        setActiveReportTab('clinical-report');
+        setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
         saveToHistory(result);
       } catch (err: any) {
         const msg = err.message || "Synthesis failed. Please verify intake data quality.";

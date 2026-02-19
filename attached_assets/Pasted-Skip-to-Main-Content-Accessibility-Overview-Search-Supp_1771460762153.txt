@@ -1,0 +1,134 @@
+Skip to Main Content
+Accessibility Overview
+Search
+Support
+1.888.799.5926
+Contact Sales
+Request a Demo
+Zoom Logo
+Products
+Solutions
+Resources
+Plans & Pricing
+Schedule
+Join
+Host 
+Web App 
+
+ profile avatar
+PERSONAL
+Home
+Profile
+Meetings
+Webinars
+Webinars Plus
+Events
+Phone
+Personal Contacts
+Personal Devices
+Hub
+Whiteboards
+Notes
+Docs
+Tasks
+Surveys
+Workflows
+Recordings & Transcripts
+Summaries
+Clips
+Scheduler
+Mail
+Calendar
+Settings
+Analytics & Reports
+ADMIN
+Plans and Billing
+User Management
+Team Chat Management
+Device Management
+Room Management
+Workspaces Management
+Phone System Management
+AI Studio
+AI Companion
+Custom Agents
+Knowledge Library
+Tool Templates
+Integrations
+Account Management
+Advanced
+Zoom Learning Center
+
+Video Tutorials
+
+Knowledge Base
+
+DARP
+PUBLISHED
+Entire account
+Structured psychiatric consultation notes following DARP methodology.
+Data
+Length:
+Synthesize all objective and subjective client observations (e.g., behaviors, mood, affect, key verbalizations, illustrative quotes) from transcripts and notes. Use descriptive, non-speculative language. Ensure statements describe observable behavior, not assumptions (e.g., change "Client appears sad" to "Client had downcast gaze, soft voice, and reported feeling tearful"). Format as bullet points.
+Assessment
+Length:
+Provide a concise clinical interpretation based only on the 'Data' section. Discuss progress on goals, strengths, challenges, and emerging themes, avoiding personal opinion. Every interpretation must trace back to specific data (e.g., not "Client is resistant," but "Client demonstrated resistance... evidenced by topic shifting"). Format as a paragraph or bullets.
+Response
+Length:
+Detail specific therapist interventions and the client's immediate/overall reactions and engagement. Use clear, jargon-free language. For each intervention, state the observed client reaction (e.g., not "Applied CBT," but "Introduced cognitive restructuring... leading client to identify and reframe one negative self-statement"). Format as bullet points.
+Plan
+Length:
+Formulate specific, measurable, achievable, relevant, and time-bound (SMART) next steps based on the session's Data, Assessment, and Response. Include any homework, future interventions, or referrals. Ensure each item is a specific, measurable action (e.g., not "Client will work on social skills," but "Client will initiate one 5-minute conversation with a coworker..."). Format as bullet points.
+ICD-10 Code
+Length:
+ "Based on the combined information in the 'Data' and 'Assessment' sections, propose up to three most relevant ICD-10 diagnosis codes. For each code, provide a brief justification directly linking it to the client's symptoms, reported history, or observed presentation. Prioritize the most specific code available. If an 'unspecified' code is necessary, note the reason. Format as a dedicated section 'ICD-10 Code Suggestions'."
+CPT Code
+Length:
+Based on the specified session duration and the type of interventions described in the 'Response' section, recommend the most appropriate CPT procedure code(s). Clearly state the chosen code and its corresponding time increment. If applicable, also suggest add-on codes (e.g., for crisis or interactive complexity) with justification. Format as a dedicated section 'CPT Code Suggestions'."
+About
+Zoom Blog
+Customers
+Our Team
+Careers
+Referral Program
+Integrations
+Partners
+Investors
+Press
+Sustainability & ESG
+Zoom Cares
+Media Kit
+How to Videos
+Developer Platform
+Zoom Ventures
+Zoom Merchandise Store
+Download
+Zoom Workplace App
+Zoom Room Apps
+Zoom Rooms Controller
+Browser Extension
+Outlook Plug-in
+Android App
+Zoom Virtual Backgrounds
+Sales
+1.888.799.5926
+Contact Sales
+Plans & Pricing
+Request a Demo
+Webinars and Events
+Zoom Experience Center
+Support
+Test Zoom
+Account
+Support Center
+Learning Center
+Zoom Community
+Feedback
+Contact Us
+Accessibility
+Developer support
+Privacy, Security, Legal Policies, and Modern Slavery Act Transparency Statement
+Language
+English 
+Zoom on Blog Zoom on LinkedIn Zoom on Twitter Zoom on Youtube Zoom on Facebook Zoom on Instagram
+Copyright ©2026 Zoom Communications, Inc. All rights reserved.Terms Privacy Trust Center Acceptable Use Guidelines Legal & Compliance Your Privacy Choices Cookie Preferences

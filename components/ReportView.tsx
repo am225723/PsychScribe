@@ -8,6 +8,7 @@ interface ReportViewProps {
   isDriveLinked: boolean;
   linkedEmail: string | null;
   accessToken: string | null;
+  documentType?: 'summary' | 'treatment' | 'darp';
 }
 
 export const ReportView: React.FC<ReportViewProps> = ({ 
@@ -15,7 +16,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
   activeTab,
   isDriveLinked,
   linkedEmail,
-  accessToken
+  accessToken,
+  documentType = 'summary'
 }) => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
@@ -42,13 +44,25 @@ export const ReportView: React.FC<ReportViewProps> = ({
 
   const sections = useMemo(() => {
     const parts = report.split(/\[SECTION_\d\]/i);
+    if (documentType === 'darp') {
+      return {
+        clinicalReport: parts[1] || '',
+        extendedRecord: parts[2] || '',
+        impressions: parts[3] || '',
+        treatmentPlan: parts[4] || '',
+        icd10: parts[5] || '',
+        cpt: parts[6] || '',
+      };
+    }
     return {
       clinicalReport: parts[1] || '',
       extendedRecord: parts[2] || '',
       impressions: parts[3] || '',
-      treatmentPlan: parts[4] || ''
+      treatmentPlan: parts[4] || '',
+      icd10: '',
+      cpt: '',
     };
-  }, [report]);
+  }, [report, documentType]);
 
   useEffect(() => {
     const generatePDF = () => {
@@ -471,6 +485,113 @@ export const ReportView: React.FC<ReportViewProps> = ({
             </div>
             <div className="report-content max-w-5xl">
               {formatContent(sections.treatmentPlan, 'treatment-plan')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'darp-data' && (
+          <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+            <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+               <div className="space-y-2">
+                  <h1 className="text-5xl font-black text-teal-950 uppercase tracking-tighter lg:text-6xl">Data</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                    <span className="w-2 h-2 bg-sky-500 rounded-full animate-pulse"></span>
+                    Session Observations: {patientData.fullName}
+                  </p>
+               </div>
+               <div className="text-right">
+                  <div className="text-xs font-black uppercase tracking-[0.4em] text-teal-800/30 mb-1">Session Date</div>
+                  <p className="text-sm font-black uppercase tracking-[0.2em] text-teal-900 bg-teal-50 px-4 py-2 rounded-lg inline-block">
+                    {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </p>
+               </div>
+            </div>
+            <div className="report-content max-w-5xl">
+              {formatContent(sections.clinicalReport, 'darp-data')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'darp-assessment' && (
+          <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+             <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+               <div className="space-y-2">
+                  <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">Assessment</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                    <span className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></span>
+                    Clinical Interpretation
+                  </p>
+               </div>
+            </div>
+            <div className="report-content max-w-5xl">
+              {formatContent(sections.extendedRecord, 'darp-assessment')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'darp-response' && (
+          <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+             <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+               <div className="space-y-2">
+                  <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">Response</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                    <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+                    Interventions & Reactions
+                  </p>
+               </div>
+            </div>
+            <div className="report-content max-w-5xl">
+              {formatContent(sections.impressions, 'darp-response')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'darp-plan' && (
+          <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+             <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+               <div className="space-y-2">
+                  <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">Plan</h1>
+                  <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                    <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                    SMART Next Steps
+                  </p>
+               </div>
+            </div>
+            <div className="report-content max-w-5xl">
+              {formatContent(sections.treatmentPlan, 'darp-plan')}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'darp-icd10' && (
+          <div className="space-y-8">
+            <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+               <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+                 <div className="space-y-2">
+                    <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">ICD-10 Codes</h1>
+                    <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                      <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
+                      Diagnosis Code Suggestions
+                    </p>
+                 </div>
+              </div>
+              <div className="report-content max-w-5xl">
+                {formatContent(sections.icd10, 'darp-icd10')}
+              </div>
+            </div>
+            <div className="bg-white rounded-[3rem] shadow-[0_40px_100px_-20px_rgba(20,50,50,0.1)] border border-teal-50 p-12 md:p-24 ring-1 ring-teal-50/50 transition-all">
+               <div className="mb-16 pb-8 border-b-2 border-teal-50 flex justify-between items-end gap-10">
+                 <div className="space-y-2">
+                    <h1 className="text-4xl font-black text-teal-950 uppercase tracking-tighter lg:text-5xl">CPT Codes</h1>
+                    <p className="text-teal-800/40 font-black uppercase tracking-[0.5em] text-xs flex items-center gap-3">
+                      <span className="w-2 h-2 bg-violet-500 rounded-full animate-pulse"></span>
+                      Procedure Code Suggestions
+                    </p>
+                 </div>
+              </div>
+              <div className="report-content max-w-5xl">
+                {formatContent(sections.cpt, 'darp-cpt')}
+              </div>
             </div>
           </div>
         )}

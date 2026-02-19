@@ -43,7 +43,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 ## Document Types
 1. **Intake Summary** (`/summary`) - Clinical Synthesis Report from intake data (PDF/text input, multiple files)
 2. **Treatment Plan** (`/treatment`) - Clinical Mental Health Treatment Plan (PDF/text/audio input, multiple files)
-3. **Session Note** (`/darp`) - DARP Progress Note (PDF/text/audio input, multiple files) - DARP prompt placeholder, awaiting full prompt
+3. **Session Note** (`/darp`) - DARP Progress Note (PDF/text/audio/visual input, multiple files) - Full DARP prompt with 6 sections: Data, Assessment, Response, Plan, ICD-10 Codes, CPT Codes
 
 ## Google Drive Integration
 - Drive token persisted in localStorage (survives page reloads)

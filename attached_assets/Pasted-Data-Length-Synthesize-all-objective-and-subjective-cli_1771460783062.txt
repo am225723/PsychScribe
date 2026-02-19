@@ -1,0 +1,18 @@
+Data
+Length:
+Synthesize all objective and subjective client observations (e.g., behaviors, mood, affect, key verbalizations, illustrative quotes) from transcripts and notes. Use descriptive, non-speculative language. Ensure statements describe observable behavior, not assumptions (e.g., change "Client appears sad" to "Client had downcast gaze, soft voice, and reported feeling tearful"). Format as bullet points.
+Assessment
+Length:
+Provide a concise clinical interpretation based only on the 'Data' section. Discuss progress on goals, strengths, challenges, and emerging themes, avoiding personal opinion. Every interpretation must trace back to specific data (e.g., not "Client is resistant," but "Client demonstrated resistance... evidenced by topic shifting"). Format as a paragraph or bullets.
+Response
+Length:
+Detail specific therapist interventions and the client's immediate/overall reactions and engagement. Use clear, jargon-free language. For each intervention, state the observed client reaction (e.g., not "Applied CBT," but "Introduced cognitive restructuring... leading client to identify and reframe one negative self-statement"). Format as bullet points.
+Plan
+Length:
+Formulate specific, measurable, achievable, relevant, and time-bound (SMART) next steps based on the session's Data, Assessment, and Response. Include any homework, future interventions, or referrals. Ensure each item is a specific, measurable action (e.g., not "Client will work on social skills," but "Client will initiate one 5-minute conversation with a coworker..."). Format as bullet points.
+ICD-10 Code
+Length:
+ "Based on the combined information in the 'Data' and 'Assessment' sections, propose up to three most relevant ICD-10 diagnosis codes. For each code, provide a brief justification directly linking it to the client's symptoms, reported history, or observed presentation. Prioritize the most specific code available. If an 'unspecified' code is necessary, note the reason. Format as a dedicated section 'ICD-10 Code Suggestions'."
+CPT Code
+Length:
+Based on the specified session duration and the type of interventions described in the 'Response' section, recommend the most appropriate CPT procedure code(s). Clearly state the chosen code and its corresponding time increment. If applicable, also suggest add-on codes (e.g., for crisis or interactive complexity) with justification. Format as a dedicated section 'CPT Code Suggestions'."

@@ -159,6 +159,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
           isDriveLinked={isDriveLinked}
           linkedEmail={linkedEmail}
           accessToken={accessToken}
+          documentType={documentType}
         />
       </div>
     );

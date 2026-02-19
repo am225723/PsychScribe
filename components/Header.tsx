@@ -55,13 +55,27 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Safety', icon: 'fa-shield-heart', page: 'safety', color: 'text-red-600' },
   ];
 
-  const reportNavItems: { label: string; icon: string; tab: ReportTab }[] = [
+  const isDarpRoute = location.pathname === '/darp';
+
+  const summaryReportNavItems: { label: string; icon: string; tab: ReportTab }[] = [
     { label: 'Home', icon: 'fa-house', tab: 'clinical-report' },
     { label: 'Brief', icon: 'fa-id-card', tab: 'clinical-report' },
     { label: 'Record', icon: 'fa-dna', tab: 'extended-record' },
     { label: 'Plan', icon: 'fa-clipboard-user', tab: 'treatment-plan' },
     { label: 'PDF', icon: 'fa-file-circle-plus', tab: 'pdf-view' },
   ];
+
+  const darpReportNavItems: { label: string; icon: string; tab: ReportTab }[] = [
+    { label: 'Home', icon: 'fa-house', tab: 'darp-data' },
+    { label: 'Data', icon: 'fa-clipboard-list', tab: 'darp-data' },
+    { label: 'Assessment', icon: 'fa-stethoscope', tab: 'darp-assessment' },
+    { label: 'Response', icon: 'fa-comments', tab: 'darp-response' },
+    { label: 'Plan', icon: 'fa-clipboard-user', tab: 'darp-plan' },
+    { label: 'Codes', icon: 'fa-hashtag', tab: 'darp-icd10' },
+    { label: 'PDF', icon: 'fa-file-circle-plus', tab: 'pdf-view' },
+  ];
+
+  const reportNavItems = isDarpRoute ? darpReportNavItems : summaryReportNavItems;
 
   const handleNavigate = (page: Page) => {
     const path = getPath(page);
