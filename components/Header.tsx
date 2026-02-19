@@ -43,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'docs': return '/docs';
       case 'safety': return '/safety';
       case 'hipaa': return '/hipaa';
+      case 'batch': return '/batch';
       case 'support': return '/support';
       default: return '/';
     }
@@ -50,7 +51,8 @@ export const Header: React.FC<HeaderProps> = ({
 
   const navItems: { label: string; icon: string; page: Page; color?: string }[] = [
     { label: 'Home', icon: 'fa-house', page: 'home' },
-    { label: 'Vault', icon: 'fa-box-archive', page: 'vault' }, 
+    { label: 'Vault', icon: 'fa-box-archive', page: 'vault' },
+    { label: 'Batch', icon: 'fa-layer-group', page: 'batch' },
     { label: 'Docs', icon: 'fa-file-lines', page: 'docs' },
     { label: 'Safety', icon: 'fa-shield-heart', page: 'safety', color: 'text-red-600' },
   ];

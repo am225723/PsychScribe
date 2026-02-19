@@ -4,6 +4,7 @@ import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
 import { DocumentWorkspace } from './components/DocumentWorkspace';
 import { Vault } from './components/Vault';
+import { BatchProcessing } from './components/BatchProcessing';
 import { Documentation } from './components/Documentation';
 import { SafetyProtocols } from './components/SafetyProtocols';
 import { HipaaCompliance } from './components/HipaaCompliance';
@@ -11,10 +12,12 @@ import { Support } from './components/Support';
 import { ProgressBar } from './components/ProgressBar';
 import { ChatBot } from './components/ChatBot';
 import { analyzeIntake } from './services/geminiService';
+import { findOrCreatePatient, saveReport, getReports, deleteReport as deleteReportDb } from './services/supabaseService';
+import type { Report } from './services/supabaseService';
 import { FileData } from './types';
 import type { DocumentType, AnalysisMetadata } from './services/geminiService';
 
-export type Page = 'home' | 'vault' | 'docs' | 'safety' | 'hipaa' | 'support';
+export type Page = 'home' | 'vault' | 'batch' | 'docs' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
 
 export interface ReportHistoryItem {
@@ -24,9 +27,8 @@ export interface ReportHistoryItem {
   date: string;
   content: string;
   isUrgent: boolean;
+  documentType?: string;
 }
-
-const STORAGE_KEY = 'integrative_psych_history_v1';
 
 const CLIENT_ID = "817289217448-m8t3lh9263b4mnu9cdsh4ki9kflgb0d0.apps.googleusercontent.com"; 
 const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"];
@@ -44,12 +46,26 @@ declare global {
   }
 }
 
+function reportToHistoryItem(report: Report): ReportHistoryItem {
+  const patient = report.patient;
+  return {
+    id: report.id,
+    patientName: patient?.full_name || 'Unknown Patient',
+    initials: patient?.initials || 'XX',
+    date: new Date(report.created_at).toLocaleDateString(),
+    content: report.content,
+    isUrgent: report.is_urgent,
+    documentType: report.document_type,
+  };
+}
+
 const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [activeReportTab, setActiveReportTab] = useState<ReportTab>('clinical-report');
   const [isProcessing, setIsProcessing] = useState(false);
   const [report, setReport] = useState<string | null>(null);
+  const [currentDocType, setCurrentDocType] = useState<DocumentType>('summary');
   const [error, setError] = useState<{ message: string; isQuota: boolean } | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
@@ -61,6 +77,15 @@ const App: React.FC = () => {
   const [accessToken, setAccessToken] = useState<string | null>(() => localStorage.getItem('drive_access_token'));
   const [tokenClient, setTokenClient] = useState<any>(null);
 
+  const loadHistory = async () => {
+    try {
+      const reports = await getReports({ sortBy: 'newest' });
+      setHistory(reports.map(reportToHistoryItem));
+    } catch (e) {
+      console.error("Failed to load history from database:", e);
+    }
+  };
+
   useEffect(() => {
     const checkKey = async () => {
       if (window.aistudio) {
@@ -69,15 +94,7 @@ const App: React.FC = () => {
       }
     };
     checkKey();
-    
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        setHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load history", e);
-      }
-    }
+    loadHistory();
 
     const initGis = () => {
       if (window.google && window.google.accounts) {
@@ -169,28 +186,35 @@ const App: React.FC = () => {
     }
   };
 
-  const saveToHistory = (content: string) => {
+  const saveToHistory = async (content: string, docType: DocumentType) => {
     const nameMatch = content.match(/PATIENT_NAME:\s*(.*)/i);
-    const patientName = nameMatch ? nameMatch[1].trim() : "Unknown Patient";
-    const initials = patientName
-      .split(' ')
-      .map(n => n[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 3);
+    const patientName = nameMatch ? nameMatch[1].trim().replace(/\*+/g, '') : "Unknown Patient";
 
-    const newItem: ReportHistoryItem = {
-      id: Date.now().toString(),
-      patientName,
-      initials,
-      date: new Date().toLocaleDateString(),
-      content,
-      isUrgent: content.includes('🚨')
-    };
+    const clientIdMatch = content.match(/CLIENT_ID:\s*(.*)/i);
+    const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : undefined;
 
-    const updated = [newItem, ...history].slice(0, 20);
-    setHistory(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    const dobMatch = content.match(/DOB:\s*(.*)/i);
+    const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
+
+    try {
+      const patient = await findOrCreatePatient(patientName, dob, clientId);
+      const savedReport = await saveReport(patient.id, docType, content, content.includes('🚨'));
+      const newItem = reportToHistoryItem(savedReport);
+      setHistory(prev => [newItem, ...prev]);
+    } catch (e) {
+      console.error("Failed to save to database, falling back to local:", e);
+      const initials = patientName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+      const newItem: ReportHistoryItem = {
+        id: Date.now().toString(),
+        patientName,
+        initials,
+        date: new Date().toLocaleDateString(),
+        content,
+        isUrgent: content.includes('🚨'),
+        documentType: docType,
+      };
+      setHistory(prev => [newItem, ...prev]);
+    }
   };
 
   const createProcessHandler = (docType: DocumentType) => {
@@ -204,8 +228,9 @@ const App: React.FC = () => {
           : await analyzeIntake(input.map(f => ({ mimeType: f.mimeType, data: f.base64 })), docType, metadata);
 
         setReport(result);
+        setCurrentDocType(docType);
         setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
-        saveToHistory(result);
+        await saveToHistory(result, docType);
       } catch (err: any) {
         const msg = err.message || "Synthesis failed. Please verify intake data quality.";
         const isQuota = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Requested entity was not found');
@@ -224,16 +249,22 @@ const App: React.FC = () => {
 
   const openPastReport = (item: ReportHistoryItem) => {
     setReport(item.content);
-    setActiveReportTab('clinical-report');
-    navigate('/summary');
+    const docType = item.documentType || 'summary';
+    setCurrentDocType(docType as DocumentType);
+    setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
+    const route = docType === 'treatment' ? '/treatment' : docType === 'darp' ? '/darp' : '/summary';
+    navigate(route);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const deleteHistoryItem = (e: React.MouseEvent, id: string) => {
+  const deleteHistoryItem = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    const updated = history.filter(item => item.id !== id);
-    setHistory(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    try {
+      await deleteReportDb(id);
+    } catch (err) {
+      console.error("Failed to delete from database:", err);
+    }
+    setHistory(prev => prev.filter(item => item.id !== id));
   };
 
   const workspaceProps = {
@@ -295,6 +326,14 @@ const App: React.FC = () => {
               history={history}
               onOpenReport={openPastReport}
               onDeleteReport={deleteHistoryItem}
+              onRefresh={loadHistory}
+            />
+          } />
+          <Route path="/batch" element={
+            <BatchProcessing
+              isDriveLinked={isDriveLinked}
+              accessToken={accessToken}
+              onComplete={loadHistory}
             />
           } />
           <Route path="/docs" element={<Documentation />} />
