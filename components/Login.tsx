@@ -33,11 +33,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
 
-        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-          onMfaRequired();
-        } else {
-          onLogin();
+        try {
+          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+            onMfaRequired();
+          } else {
+            await onLogin();
+          }
+        } catch {
+          await onLogin();
         }
       }
     } catch (err: any) {

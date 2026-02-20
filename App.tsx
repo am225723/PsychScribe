@@ -149,7 +149,7 @@ const App: React.FC = () => {
           const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
           if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
             setAuthState('mfa_challenge');
-          } else if (aal?.currentLevel === 'aal2' || aal?.nextLevel === 'aal1') {
+          } else {
             setAuthState('authenticated');
           }
         } catch {
