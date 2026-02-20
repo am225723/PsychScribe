@@ -89,78 +89,67 @@ const App: React.FC = () => {
   const [tokenClient, setTokenClient] = useState<any>(null);
 
   useEffect(() => {
-    let resolved = false;
+    let handled = false;
 
-    const timeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        setAuthState('unauthenticated');
-      }
-    }, 5000);
-
-    const resolveAuth = (state: AuthState) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
+    const resolve = (state: AuthState, sess?: any) => {
+      if (sess !== undefined) setSession(sess);
+      if (!handled) {
+        handled = true;
+        setAuthState(state);
+      } else {
         setAuthState(state);
       }
     };
 
-    const checkSession = async () => {
+    const checkMfa = async (): Promise<AuthState> => {
       try {
-        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
-        if (error || !currentSession) {
-          resolveAuth('unauthenticated');
+        const result = await Promise.race([
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+        ]);
+        const aal = (result as any)?.data;
+        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+          return 'mfa_challenge';
+        }
+        return 'authenticated';
+      } catch {
+        return 'authenticated';
+      }
+    };
+
+    const init = async () => {
+      try {
+        const sessionResult = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ]);
+        const currentSession = (sessionResult as any)?.data?.session;
+        if (!currentSession) {
+          resolve('unauthenticated');
           return;
         }
         setSession(currentSession);
-        try {
-          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-            resolveAuth('mfa_challenge');
-          } else {
-            resolveAuth('authenticated');
-          }
-        } catch {
-          resolveAuth('authenticated');
-        }
+        const mfaState = await checkMfa();
+        resolve(mfaState);
       } catch {
-        resolveAuth('unauthenticated');
+        resolve('unauthenticated');
       }
     };
-    checkSession();
+    init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      setSession(newSession);
       if (!newSession) {
-        resolveAuth('unauthenticated');
-      } else if (_event === 'INITIAL_SESSION') {
-        try {
-          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-            resolveAuth('mfa_challenge');
-          } else {
-            resolveAuth('authenticated');
-          }
-        } catch {
-          resolveAuth('authenticated');
-        }
-      } else if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED') {
-        try {
-          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-            setAuthState('mfa_challenge');
-          } else {
-            setAuthState('authenticated');
-          }
-        } catch {
-          setAuthState('authenticated');
-        }
+        resolve('unauthenticated', null);
+        return;
+      }
+      setSession(newSession);
+      if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED' || _event === 'INITIAL_SESSION') {
+        const mfaState = await checkMfa();
+        resolve(mfaState);
       }
     });
 
     return () => {
-      clearTimeout(timeout);
       subscription.unsubscribe();
     };
   }, []);
