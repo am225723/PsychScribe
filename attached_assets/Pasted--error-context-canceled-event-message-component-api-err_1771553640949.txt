@@ -1,0 +1,122 @@
+[
+  {
+    "error": "context canceled",
+    "event_message": "{\"component\":\"api\",\"error\":\"context canceled\",\"level\":\"error\",\"msg\":\"config reloader is exiting\",\"time\":\"2026-02-20T02:04:14Z\"}",
+    "id": "423d2f19-c356-4004-9fe8-f0e114bd9dd2",
+    "level": "error",
+    "msg": "config reloader is exiting",
+    "path": null,
+    "status": null,
+    "timestamp": 1771553054000000
+  },
+  {
+    "error": "context canceled",
+    "event_message": "{\"component\":\"apiworker\",\"error\":\"context canceled\",\"level\":\"error\",\"msg\":\"background apiworker is exiting\",\"time\":\"2026-02-20T02:04:14Z\"}",
+    "id": "bdb4a19f-772b-4205-9249-1f79dcafd6fa",
+    "level": "error",
+    "msg": "background apiworker is exiting",
+    "path": null,
+    "status": null,
+    "timestamp": 1771553054000000
+  },
+  {
+    "error": null,
+    "event_message": "{\"component\":\"api\",\"level\":\"warning\",\"msg\":\"DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon\",\"time\":\"2026-02-20T02:04:14Z\"}",
+    "id": "2fb97681-4fba-4830-ad8d-ef82a1dcb2f8",
+    "level": "warning",
+    "msg": "DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon",
+    "path": null,
+    "status": null,
+    "timestamp": 1771553054000000
+  },
+  {
+    "error": null,
+    "event_message": "{\"component\":\"api\",\"level\":\"warning\",\"msg\":\"DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon\",\"time\":\"2026-02-20T02:04:14Z\"}",
+    "id": "da99b311-384a-4d08-a8e9-cdabc4debe93",
+    "level": "warning",
+    "msg": "DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon",
+    "path": null,
+    "status": null,
+    "timestamp": 1771553054000000
+  },
+  {
+    "error": "http: Server closed",
+    "event_message": "{\"error\":\"http: Server closed\",\"level\":\"error\",\"msg\":\"prometheus server (0.0.0.0:9122) shut down\",\"time\":\"2026-02-20T02:04:14Z\"}",
+    "id": "e4940bbc-13b5-4709-a2dd-9321e8614c0a",
+    "level": "error",
+    "msg": "prometheus server (0.0.0.0:9122) shut down",
+    "path": null,
+    "status": null,
+    "timestamp": 1771553054000000
+  },
+  {
+    "error": "context canceled",
+    "event_message": "{\"component\":\"reloader\",\"error\":\"context canceled\",\"grace_period_duration\":\"2s\",\"level\":\"error\",\"msg\":\"config reloader is exiting\",\"notify_enabled\":true,\"poller_enabled\":false,\"poller_interval\":\"10s\",\"signal_enabled\":false,\"signal_number\":10,\"time\":\"2026-02-20T02:04:14Z\"}",
+    "id": "5d1b8d01-76cd-4b47-a4cb-2ee311c0848d",
+    "level": "error",
+    "msg": "config reloader is exiting",
+    "path": null,
+    "status": null,
+    "timestamp": 1771553054000000
+  },
+  {
+    "error": "context canceled",
+    "event_message": "{\"component\":\"apiworker\",\"error\":\"context canceled\",\"level\":\"error\",\"msg\":\"background apiworker is exiting\",\"time\":\"2026-02-20T01:26:41Z\"}",
+    "id": "a419cd29-a36f-49d4-af30-2fbcd43aac11",
+    "level": "error",
+    "msg": "background apiworker is exiting",
+    "path": null,
+    "status": null,
+    "timestamp": 1771550801000000
+  },
+  {
+    "error": "http: Server closed",
+    "event_message": "{\"error\":\"http: Server closed\",\"level\":\"error\",\"msg\":\"prometheus server (0.0.0.0:9122) shut down\",\"time\":\"2026-02-20T01:26:41Z\"}",
+    "id": "f35fc57d-1985-4c48-b853-583205ceb558",
+    "level": "error",
+    "msg": "prometheus server (0.0.0.0:9122) shut down",
+    "path": null,
+    "status": null,
+    "timestamp": 1771550801000000
+  },
+  {
+    "error": "context canceled",
+    "event_message": "{\"component\":\"reloader\",\"error\":\"context canceled\",\"grace_period_duration\":\"2s\",\"level\":\"error\",\"msg\":\"config reloader is exiting\",\"notify_enabled\":true,\"poller_enabled\":false,\"poller_interval\":\"10s\",\"signal_enabled\":false,\"signal_number\":10,\"time\":\"2026-02-20T01:26:41Z\"}",
+    "id": "12a18a5e-5737-40bb-8674-331deb9096dd",
+    "level": "error",
+    "msg": "config reloader is exiting",
+    "path": null,
+    "status": null,
+    "timestamp": 1771550801000000
+  },
+  {
+    "error": null,
+    "event_message": "{\"component\":\"api\",\"level\":\"warning\",\"msg\":\"DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon\",\"time\":\"2026-02-20T01:26:41Z\"}",
+    "id": "70e07d96-8781-4e44-8be7-74db88237bd3",
+    "level": "warning",
+    "msg": "DEPRECATION NOTICE: GOTRUE_JWT_DEFAULT_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon",
+    "path": null,
+    "status": null,
+    "timestamp": 1771550801000000
+  },
+  {
+    "error": null,
+    "event_message": "{\"component\":\"api\",\"level\":\"warning\",\"msg\":\"DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon\",\"time\":\"2026-02-20T01:26:41Z\"}",
+    "id": "d2d4c4cc-9b5f-4653-85fc-06b1e837494a",
+    "level": "warning",
+    "msg": "DEPRECATION NOTICE: GOTRUE_JWT_ADMIN_GROUP_NAME not supported by Supabase's GoTrue, will be removed soon",
+    "path": null,
+    "status": null,
+    "timestamp": 1771550801000000
+  },
+  {
+    "error": "context canceled",
+    "event_message": "{\"component\":\"api\",\"error\":\"context canceled\",\"level\":\"error\",\"msg\":\"config reloader is exiting\",\"time\":\"2026-02-20T01:26:41Z\"}",
+    "id": "7a04d2fc-b4ef-48b5-a688-9e093470cc5b",
+    "level": "error",
+    "msg": "config reloader is exiting",
+    "path": null,
+    "status": null,
+    "timestamp": 1771550801000000
+  }
+]

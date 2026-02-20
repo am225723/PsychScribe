@@ -1,0 +1,42 @@
+[
+  {
+    "event_message": "POST | 400 | 68.14.157.152 | 9d0a72d68ed88c30 | https://hqlqtnjnyhafdnfetjac.supabase.co/auth/v1/token?grant_type=password | Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "id": "ad08e3c7-74ff-428c-9981-de6b79136b28",
+    "identifier": "hqlqtnjnyhafdnfetjac",
+    "method": "POST",
+    "path": "/auth/v1/token",
+    "search": "?grant_type=password",
+    "status_code": 400,
+    "timestamp": 1771553227305000
+  },
+  {
+    "event_message": "POST | 400 | 68.14.157.152 | 9d0a72625d728c30 | https://hqlqtnjnyhafdnfetjac.supabase.co/auth/v1/token?grant_type=password | Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "id": "b26b2815-5b8e-4e6a-8409-109d4c4e1be8",
+    "identifier": "hqlqtnjnyhafdnfetjac",
+    "method": "POST",
+    "path": "/auth/v1/token",
+    "search": "?grant_type=password",
+    "status_code": 400,
+    "timestamp": 1771553208706000
+  },
+  {
+    "event_message": "POST | 400 | 68.14.157.152 | 9d0a722718cb8c30 | https://hqlqtnjnyhafdnfetjac.supabase.co/auth/v1/token?grant_type=password | Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "id": "25c53efe-5e38-4683-9433-e68cfa16ba8e",
+    "identifier": "hqlqtnjnyhafdnfetjac",
+    "method": "POST",
+    "path": "/auth/v1/token",
+    "search": "?grant_type=password",
+    "status_code": 400,
+    "timestamp": 1771553199239000
+  },
+  {
+    "event_message": "POST | 400 | 68.14.157.152 | 9d0a71f94fde8c30 | https://hqlqtnjnyhafdnfetjac.supabase.co/auth/v1/token?grant_type=password | Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+    "id": "93bdd9fa-904b-4d48-9fb9-37f13f1f709a",
+    "identifier": "hqlqtnjnyhafdnfetjac",
+    "method": "POST",
+    "path": "/auth/v1/token",
+    "search": "?grant_type=password",
+    "status_code": 400,
+    "timestamp": 1771553191903000
+  }
+]
