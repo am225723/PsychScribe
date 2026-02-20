@@ -44,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
     switch (page) {
       case 'home': return '/';
       case 'vault': return '/vault';
-      case 'docs': return '/docs';
+      case 'preceptor': return '/preceptor';
       case 'safety': return '/safety';
       case 'hipaa': return '/hipaa';
       case 'batch': return '/batch';
@@ -57,7 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Home', icon: 'fa-house', page: 'home' },
     { label: 'Vault', icon: 'fa-box-archive', page: 'vault' },
     { label: 'Batch', icon: 'fa-layer-group', page: 'batch' },
-    { label: 'Docs', icon: 'fa-file-lines', page: 'docs' },
+    { label: 'Preceptor', icon: 'fa-user-graduate', page: 'preceptor' },
     { label: 'Safety', icon: 'fa-shield-heart', page: 'safety', color: 'text-red-600' },
   ];
 

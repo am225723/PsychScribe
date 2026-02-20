@@ -6,6 +6,7 @@ import { DocumentWorkspace } from './components/DocumentWorkspace';
 import { Vault } from './components/Vault';
 import { BatchProcessing } from './components/BatchProcessing';
 import { Documentation } from './components/Documentation';
+import { Preceptor } from './components/Preceptor';
 import { SafetyProtocols } from './components/SafetyProtocols';
 import { HipaaCompliance } from './components/HipaaCompliance';
 import { Support } from './components/Support';
@@ -21,7 +22,7 @@ import { FileData } from './types';
 import type { DocumentType, AnalysisMetadata } from './services/geminiService';
 import type { Session } from '@supabase/supabase-js';
 
-export type Page = 'home' | 'vault' | 'batch' | 'docs' | 'safety' | 'hipaa' | 'support';
+export type Page = 'home' | 'vault' | 'batch' | 'preceptor' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
 
 export interface ReportHistoryItem {
@@ -483,6 +484,7 @@ const App: React.FC = () => {
               onComplete={loadHistory}
             />
           } />
+          <Route path="/preceptor" element={<Preceptor />} />
           <Route path="/docs" element={<Documentation />} />
           <Route path="/safety" element={<SafetyProtocols />} />
           <Route path="/hipaa" element={<HipaaCompliance />} />

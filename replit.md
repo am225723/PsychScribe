@@ -26,6 +26,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/components/Vault.tsx` - Patient archives with search, filters, date range, and sorting
 - `/components/BatchProcessing.tsx` - Multi-file batch processing with sequential AI analysis and auto-save
 - `/components/ChatBot.tsx` - AI assistant chatbot
+- `/components/Preceptor.tsx` - Preceptor case review generator (3 AI perspectives + AI advisor chat)
 - `/components/Documentation.tsx` - System documentation page
 - `/components/SafetyProtocols.tsx` - Clinical safety standards page
 - `/components/HipaaCompliance.tsx` - HIPAA compliance page
@@ -44,6 +45,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/darp` - DARP Session Note workspace
 - `/vault` - Patient Archives (search, filter, sort)
 - `/batch` - Batch Processing (multi-file queue)
+- `/preceptor` - Preceptor Case Review Generator
 - `/docs` - System Documentation
 - `/safety` - Clinical Safety Standards
 - `/hipaa` - HIPAA Compliance
@@ -88,7 +90,19 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 ## Deployment
 - Static deployment, build with `npm run build`, serve from `dist/`
 
+## Preceptor
+- Upload a PDF or paste case text from a student
+- Generates 3 case reviews from different perspectives: Clinical Excellence, Documentation & Compliance, Integrative & Holistic
+- Tab-based review viewer with formatted markdown rendering
+- AI Advisor chat: compare sections across reviews, pick best elements, compile final review
+- Export any review or the final compiled review as PDF
+- Quick-suggestion buttons in chat for common actions
+
 ## Recent Changes
+- 2026-02-20: Added Preceptor page replacing Docs in nav — 3-perspective AI case review with advisor chat
+- 2026-02-20: Fixed auth loading loop with 5s timeout and INITIAL_SESSION handling
+- 2026-02-20: Fixed login stuck on "Please wait" by closing SIGNED_IN handler gap
+- 2026-02-20: Broadened Google Drive scope from drive.file to drive for full folder visibility
 - 2026-02-19: Added Supabase PostgreSQL database for persistent patient records and report history
 - 2026-02-19: Built Vault page with search by patient name, document type filters, date range, and sorting
 - 2026-02-19: Implemented Batch Processing for sequential multi-file AI analysis with auto-save
