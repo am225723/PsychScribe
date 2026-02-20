@@ -73,10 +73,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken
 
   const lookupFolderName = async (folderId: string): Promise<string> => {
     if (!accessToken) throw new Error("Not authenticated with Drive");
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=name`, {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=name&supportsAllDrives=true`, {
       headers: { Authorization: 'Bearer ' + accessToken }
     });
-    if (!res.ok) throw new Error("Could not find that folder in your Drive");
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => null);
+      const reason = errorData?.error?.message || '';
+      if (res.status === 404) {
+        throw new Error("Folder not found. Make sure your Google Drive is linked with the same account that owns this folder. The URL has /u/2/ which means a different account.");
+      }
+      throw new Error(reason || "Could not access that folder");
+    }
     const data = await res.json();
     return data.name;
   };
@@ -102,6 +109,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken
     } finally {
       setUrlLoading(false);
     }
+  };
+
+  const setFolderDirectly = (folderId: string, folderName: string) => {
+    setSelectedFolderId(folderId);
+    setSelectedFolderName(folderName);
+    localStorage.setItem('drive_patient_folder_id', folderId);
+    localStorage.setItem('drive_patient_folder_name', folderName);
   };
 
   const loadFolders = async (parentId: string) => {
