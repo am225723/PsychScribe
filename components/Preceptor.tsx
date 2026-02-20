@@ -10,8 +10,8 @@ interface ChatMessage {
   text: string;
 }
 
-const PERSPECTIVE_NAMES = ['Clinical Excellence', 'Documentation & Compliance', 'Integrative & Holistic'];
-const PERSPECTIVE_ICONS = ['fa-stethoscope', 'fa-file-shield', 'fa-leaf'];
+const PERSPECTIVE_NAMES = ['Preceptor Template', 'Super Preceptor', 'Pharmacology-First'];
+const PERSPECTIVE_ICONS = ['fa-clipboard-list', 'fa-shield-heart', 'fa-pills'];
 const PERSPECTIVE_COLORS = ['teal', 'indigo', 'emerald'];
 
 export const Preceptor: React.FC = () => {
@@ -542,9 +542,9 @@ export const Preceptor: React.FC = () => {
               <div>
                 <p className="text-xs font-bold text-teal-900">{name}</p>
                 <p className="text-[9px] text-slate-400">
-                  {i === 0 ? 'Clinical reasoning, diagnostics, treatment' :
-                   i === 1 ? 'Documentation quality, coding, compliance' :
-                   'Biopsychosocial, functional medicine, whole-person'}
+                  {i === 0 ? '8-section structured case review with scripts & teaching pearls' :
+                   i === 1 ? 'Safety-forward with priority problem list, decision trees & reality checks' :
+                   'Medication-first deep dive with corrected plan & next-visit agenda'}
                 </p>
               </div>
             </div>

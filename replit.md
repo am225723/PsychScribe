@@ -92,7 +92,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 
 ## Preceptor
 - Upload a PDF or paste case text from a student
-- Generates 3 case reviews from different perspectives: Clinical Excellence, Documentation & Compliance, Integrative & Holistic
+- Generates 3 case reviews from different perspectives: Preceptor Template, Super Preceptor, Pharmacology-First
 - Tab-based review viewer with formatted markdown rendering
 - AI Advisor chat: compare sections across reviews, pick best elements, compile final review
 - Export any review or the final compiled review as PDF
