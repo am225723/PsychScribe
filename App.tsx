@@ -88,26 +88,43 @@ const App: React.FC = () => {
   const [tokenClient, setTokenClient] = useState<any>(null);
 
   useEffect(() => {
+    let resolved = false;
+
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        setAuthState('unauthenticated');
+      }
+    }, 5000);
+
+    const resolveAuth = (state: AuthState) => {
+      if (!resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        setAuthState(state);
+      }
+    };
+
     const checkSession = async () => {
       try {
         const { data: { session: currentSession }, error } = await supabase.auth.getSession();
         if (error || !currentSession) {
-          setAuthState('unauthenticated');
+          resolveAuth('unauthenticated');
           return;
         }
         setSession(currentSession);
         try {
           const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
           if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-            setAuthState('mfa_challenge');
+            resolveAuth('mfa_challenge');
           } else {
-            setAuthState('authenticated');
+            resolveAuth('authenticated');
           }
         } catch {
-          setAuthState('authenticated');
+          resolveAuth('authenticated');
         }
       } catch {
-        setAuthState('unauthenticated');
+        resolveAuth('unauthenticated');
       }
     };
     checkSession();
@@ -115,7 +132,18 @@ const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       setSession(newSession);
       if (!newSession) {
-        setAuthState('unauthenticated');
+        resolveAuth('unauthenticated');
+      } else if (_event === 'INITIAL_SESSION') {
+        try {
+          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+            resolveAuth('mfa_challenge');
+          } else {
+            resolveAuth('authenticated');
+          }
+        } catch {
+          resolveAuth('authenticated');
+        }
       } else if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED') {
         try {
           const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -130,7 +158,10 @@ const App: React.FC = () => {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleLoginSuccess = async () => {
