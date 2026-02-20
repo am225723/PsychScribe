@@ -62,6 +62,47 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([{ id: 'root', name: 'My Drive' }]);
   const [selectedFolderName, setSelectedFolderName] = useState<string | null>(() => localStorage.getItem('drive_patient_folder_name'));
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(() => localStorage.getItem('drive_patient_folder_id'));
+  const [urlInput, setUrlInput] = useState('');
+  const [urlError, setUrlError] = useState('');
+  const [urlLoading, setUrlLoading] = useState(false);
+
+  const extractFolderIdFromUrl = (url: string): string | null => {
+    const match = url.match(/folders\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+  };
+
+  const lookupFolderName = async (folderId: string): Promise<string> => {
+    if (!accessToken) throw new Error("Not authenticated with Drive");
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}?fields=name`, {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if (!res.ok) throw new Error("Could not find that folder in your Drive");
+    const data = await res.json();
+    return data.name;
+  };
+
+  const handlePasteUrl = async () => {
+    setUrlError('');
+    const folderId = extractFolderIdFromUrl(urlInput.trim());
+    if (!folderId) {
+      setUrlError('Please paste a valid Google Drive folder URL');
+      return;
+    }
+    setUrlLoading(true);
+    try {
+      const name = await lookupFolderName(folderId);
+      setSelectedFolderId(folderId);
+      setSelectedFolderName(name);
+      localStorage.setItem('drive_patient_folder_id', folderId);
+      localStorage.setItem('drive_patient_folder_name', name);
+      setShowFolderBrowser(false);
+      setUrlInput('');
+    } catch (err: any) {
+      setUrlError(err.message || 'Failed to look up folder');
+    } finally {
+      setUrlLoading(false);
+    }
+  };
 
   const loadFolders = async (parentId: string) => {
     if (!accessToken) return;
@@ -195,6 +236,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken
               >
                 <i className="fa-solid fa-xmark text-lg"></i>
               </button>
+            </div>
+
+            <div className="px-6 py-3 border-b border-teal-50 flex-shrink-0 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={urlInput}
+                  onChange={(e) => { setUrlInput(e.target.value); setUrlError(''); }}
+                  placeholder="Paste a Google Drive folder URL here..."
+                  className="flex-grow px-4 py-2.5 rounded-xl border border-teal-100 bg-white focus:ring-4 focus:ring-indigo-50 focus:border-indigo-200 outline-none text-sm font-bold text-teal-950 placeholder:text-teal-800/20 transition-all"
+                />
+                <button
+                  onClick={handlePasteUrl}
+                  disabled={!urlInput.trim() || urlLoading}
+                  className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                    urlInput.trim() && !urlLoading
+                      ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                      : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                  }`}
+                >
+                  {urlLoading ? <i className="fa-solid fa-circle-notch animate-spin"></i> : <i className="fa-solid fa-link"></i>}
+                  Set
+                </button>
+              </div>
+              {urlError && (
+                <p className="text-xs font-bold text-red-500 flex items-center gap-1.5">
+                  <i className="fa-solid fa-circle-exclamation"></i> {urlError}
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <div className="flex-grow h-px bg-teal-100"></div>
+                <span className="text-[9px] font-black uppercase tracking-widest text-teal-800/30">or browse</span>
+                <div className="flex-grow h-px bg-teal-100"></div>
+              </div>
             </div>
 
             <div className="px-6 py-3 border-b border-teal-50 flex items-center gap-1 flex-wrap flex-shrink-0">
