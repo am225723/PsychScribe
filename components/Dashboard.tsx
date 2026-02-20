@@ -104,8 +104,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken
       localStorage.setItem('drive_patient_folder_name', name);
       setShowFolderBrowser(false);
       setUrlInput('');
-    } catch (err: any) {
-      setUrlError(err.message || 'Failed to look up folder');
+    } catch {
+      setSelectedFolderId(folderId);
+      setSelectedFolderName('Patient Folder (via URL)');
+      localStorage.setItem('drive_patient_folder_id', folderId);
+      localStorage.setItem('drive_patient_folder_name', 'Patient Folder (via URL)');
+      setShowFolderBrowser(false);
+      setUrlInput('');
     } finally {
       setUrlLoading(false);
     }

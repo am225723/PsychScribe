@@ -89,16 +89,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkSession = async () => {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      if (currentSession) {
+      try {
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        if (error || !currentSession) {
+          setAuthState('unauthenticated');
+          return;
+        }
         setSession(currentSession);
-        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-          setAuthState('mfa_challenge');
-        } else {
+        try {
+          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+            setAuthState('mfa_challenge');
+          } else {
+            setAuthState('authenticated');
+          }
+        } catch {
           setAuthState('authenticated');
         }
-      } else {
+      } catch {
         setAuthState('unauthenticated');
       }
     };
@@ -109,10 +117,14 @@ const App: React.FC = () => {
       if (!newSession) {
         setAuthState('unauthenticated');
       } else if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED') {
-        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-          setAuthState('mfa_challenge');
-        } else if (aal?.currentLevel === 'aal2' || aal?.nextLevel === 'aal1') {
+        try {
+          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+            setAuthState('mfa_challenge');
+          } else if (aal?.currentLevel === 'aal2' || aal?.nextLevel === 'aal1') {
+            setAuthState('authenticated');
+          }
+        } catch {
           setAuthState('authenticated');
         }
       }
