@@ -400,7 +400,7 @@ const App: React.FC = () => {
       
       <main className="flex-grow container mx-auto px-4 lg:px-10 py-12 relative">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Dashboard isDriveLinked={isDriveLinked} accessToken={accessToken} />} />
           <Route path="/summary" element={
             <DocumentWorkspace
               documentType="summary"

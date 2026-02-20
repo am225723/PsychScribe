@@ -344,7 +344,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
     if (!accessToken) return;
     setLoadingFolders(true);
     try {
-      const patientFormsId = await findOrCreateFolder('PatientForms', 'root');
+      const storedFolderId = localStorage.getItem('drive_patient_folder_id');
+      const patientFormsId = storedFolderId || await findOrCreateFolder('PatientForms', 'root');
       
       const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`'${patientFormsId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`)}&fields=files(id,name)&orderBy=name`, {
         headers: { Authorization: 'Bearer ' + accessToken }
@@ -402,7 +403,8 @@ export const ReportView: React.FC<ReportViewProps> = ({
     if (!accessToken || !pdfBlob) return;
     setSaveStatus('saving');
     try {
-      const patientFormsId = await findOrCreateFolder('PatientForms', 'root');
+      const storedFolderId = localStorage.getItem('drive_patient_folder_id');
+      const patientFormsId = storedFolderId || await findOrCreateFolder('PatientForms', 'root');
 
       const query = `name='${patientData.fullName}' and mimeType='application/vnd.google-apps.folder' and '${patientFormsId}' in parents and trashed=false`;
       const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)`, {

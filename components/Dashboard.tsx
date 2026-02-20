@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const LOGO_URL = "https://hqlqtnjnyhafdnfetjac.supabase.co/storage/v1/object/public/logos/1ddf6eac-dd67-4615-83b7-937d71361e5b/1769462247681_90103e28-cdb1-49a9-a4c1-176a3ec95df2-1_all_5851.png";
@@ -42,8 +42,90 @@ const documentTypes = [
   },
 ];
 
-export const Dashboard: React.FC = () => {
+interface DashboardProps {
+  isDriveLinked?: boolean;
+  accessToken?: string | null;
+}
+
+interface DriveFolder {
+  id: string;
+  name: string;
+}
+
+export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken }) => {
   const navigate = useNavigate();
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
+  const [folders, setFolders] = useState<DriveFolder[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [currentParentId, setCurrentParentId] = useState('root');
+  const [currentParentName, setCurrentParentName] = useState('My Drive');
+  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([{ id: 'root', name: 'My Drive' }]);
+  const [selectedFolderName, setSelectedFolderName] = useState<string | null>(() => localStorage.getItem('drive_patient_folder_name'));
+  const [selectedFolderId, setSelectedFolderId] = useState<string | null>(() => localStorage.getItem('drive_patient_folder_id'));
+
+  const loadFolders = async (parentId: string) => {
+    if (!accessToken) return;
+    setLoading(true);
+    try {
+      const query = `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}&fields=files(id,name)&orderBy=name&pageSize=100`, {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      });
+      const data = await res.json();
+      setFolders(data.files || []);
+    } catch (err) {
+      console.error("Failed to load Drive folders", err);
+      setFolders([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openFolderBrowser = () => {
+    setShowFolderBrowser(true);
+    setCurrentParentId('root');
+    setCurrentParentName('My Drive');
+    setBreadcrumbs([{ id: 'root', name: 'My Drive' }]);
+    loadFolders('root');
+  };
+
+  const navigateToFolder = (folderId: string, folderName: string) => {
+    setCurrentParentId(folderId);
+    setCurrentParentName(folderName);
+    setBreadcrumbs(prev => [...prev, { id: folderId, name: folderName }]);
+    loadFolders(folderId);
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    const crumb = breadcrumbs[index];
+    setCurrentParentId(crumb.id);
+    setCurrentParentName(crumb.name);
+    setBreadcrumbs(breadcrumbs.slice(0, index + 1));
+    loadFolders(crumb.id);
+  };
+
+  const selectCurrentFolder = () => {
+    setSelectedFolderId(currentParentId);
+    setSelectedFolderName(currentParentName);
+    localStorage.setItem('drive_patient_folder_id', currentParentId);
+    localStorage.setItem('drive_patient_folder_name', currentParentName);
+    setShowFolderBrowser(false);
+  };
+
+  const selectSpecificFolder = (folder: DriveFolder) => {
+    setSelectedFolderId(folder.id);
+    setSelectedFolderName(folder.name);
+    localStorage.setItem('drive_patient_folder_id', folder.id);
+    localStorage.setItem('drive_patient_folder_name', folder.name);
+    setShowFolderBrowser(false);
+  };
+
+  const clearSelection = () => {
+    setSelectedFolderId(null);
+    setSelectedFolderName(null);
+    localStorage.removeItem('drive_patient_folder_id');
+    localStorage.removeItem('drive_patient_folder_name');
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -57,6 +139,140 @@ export const Dashboard: React.FC = () => {
           <p className="text-teal-800/60 max-w-xl mx-auto text-xs font-bold leading-relaxed uppercase tracking-[0.4em]">Clinical Synthesis Engine: drz.services</p>
         </div>
       </div>
+
+      {isDriveLinked && (
+        <div className="px-2">
+          <div className="bg-white rounded-[2rem] border-2 border-indigo-100 shadow-lg p-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 flex-shrink-0">
+                  <i className="fa-solid fa-folder-tree text-xl"></i>
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-teal-950 uppercase tracking-tight">Patient Folder Location</h3>
+                  {selectedFolderName ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <i className="fa-brands fa-google-drive text-indigo-500 text-xs"></i>
+                      <span className="text-sm font-bold text-indigo-700">{selectedFolderName}</span>
+                    </div>
+                  ) : (
+                    <p className="text-xs font-bold text-teal-800/40 mt-1">No folder selected — saves will search for "PatientForms" in Drive root</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {selectedFolderName && (
+                  <button
+                    onClick={clearSelection}
+                    className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+                <button
+                  onClick={openFolderBrowser}
+                  className="px-5 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl active:scale-[0.98]"
+                >
+                  {selectedFolderName ? 'Change Folder' : 'Select Folder'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showFolderBrowser && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden">
+            <div className="p-6 border-b border-teal-50 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="text-lg font-black text-teal-950 uppercase tracking-tight">Select Patient Folder</h3>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 mt-1">Browse to the folder that contains all patient subfolders</p>
+              </div>
+              <button
+                onClick={() => setShowFolderBrowser(false)}
+                className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+              >
+                <i className="fa-solid fa-xmark text-lg"></i>
+              </button>
+            </div>
+
+            <div className="px-6 py-3 border-b border-teal-50 flex items-center gap-1 flex-wrap flex-shrink-0">
+              {breadcrumbs.map((crumb, i) => (
+                <React.Fragment key={crumb.id}>
+                  {i > 0 && <i className="fa-solid fa-chevron-right text-[8px] text-teal-300 mx-1"></i>}
+                  <button
+                    onClick={() => navigateToBreadcrumb(i)}
+                    className={`text-xs font-bold px-2 py-1 rounded-lg transition-colors ${
+                      i === breadcrumbs.length - 1
+                        ? 'text-teal-900 bg-teal-50'
+                        : 'text-teal-600 hover:bg-teal-50'
+                    }`}
+                  >
+                    {crumb.name}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+
+            <div className="flex-grow overflow-y-auto p-4 space-y-1 min-h-[200px]">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <i className="fa-solid fa-circle-notch animate-spin text-teal-600 text-xl mr-3"></i>
+                  <span className="text-sm font-bold text-teal-800/60">Loading folders...</span>
+                </div>
+              ) : folders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <i className="fa-solid fa-folder-open text-teal-200 text-4xl mb-3"></i>
+                  <p className="text-sm font-bold text-teal-800/40">No subfolders found</p>
+                  <p className="text-xs text-teal-800/30 mt-1">You can select this folder as your patient folder</p>
+                </div>
+              ) : (
+                folders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className="flex items-center gap-3 p-3 rounded-xl hover:bg-teal-50 transition-colors group"
+                  >
+                    <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center text-amber-500 flex-shrink-0">
+                      <i className="fa-solid fa-folder text-lg"></i>
+                    </div>
+                    <span className="text-sm font-bold text-teal-950 flex-grow truncate">{folder.name}</span>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => selectSpecificFolder(folder)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-[9px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-colors"
+                        title="Use this folder as the patient folder"
+                      >
+                        Select
+                      </button>
+                      <button
+                        onClick={() => navigateToFolder(folder.id, folder.name)}
+                        className="px-3 py-1.5 rounded-lg bg-teal-100 text-teal-700 text-[9px] font-black uppercase tracking-widest hover:bg-teal-200 transition-colors"
+                        title="Open this folder"
+                      >
+                        Open
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-4 border-t border-teal-50 flex items-center justify-between flex-shrink-0 bg-slate-50/50">
+              <div className="text-xs font-bold text-teal-800/40 flex items-center gap-2">
+                <i className="fa-solid fa-folder-open text-teal-400"></i>
+                Current: <span className="text-teal-700">{currentParentName}</span>
+              </div>
+              <button
+                onClick={selectCurrentFolder}
+                className="px-6 py-3 rounded-2xl bg-teal-900 text-white text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-[0.98]"
+              >
+                Use This Folder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         <p className="text-center text-[10px] font-black uppercase tracking-[0.3em] text-teal-800/40">Select Document Type</p>
