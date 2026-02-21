@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getPatients, createPatient, updatePatient, deletePatient, importPatients } from '../services/supabaseService';
+import { getPatients, createPatient, updatePatient, deletePatient, importPatients, mergePatients } from '../services/supabaseService';
 import type { Patient } from '../services/supabaseService';
 
 export const PatientDatabase: React.FC = () => {
@@ -16,6 +16,12 @@ export const PatientDatabase: React.FC = () => {
   const [importMessage, setImportMessage] = useState('');
   const [importing, setImporting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
+  const [mergePrimaryId, setMergePrimaryId] = useState<string | null>(null);
+  const [mergeConfirm, setMergeConfirm] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState('');
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const loadPatients = async () => {
@@ -99,6 +105,56 @@ export const PatientDatabase: React.FC = () => {
     }
   };
 
+  const toggleMergeSelect = (patientId: string) => {
+    setMergeSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(patientId)) {
+        next.delete(patientId);
+        if (mergePrimaryId === patientId) setMergePrimaryId(null);
+      } else {
+        next.add(patientId);
+      }
+      return next;
+    });
+  };
+
+  const startMergeMode = () => {
+    setMergeMode(true);
+    setMergeSelected(new Set());
+    setMergePrimaryId(null);
+    setMergeConfirm(false);
+    setMergeMessage('');
+  };
+
+  const cancelMerge = () => {
+    setMergeMode(false);
+    setMergeSelected(new Set());
+    setMergePrimaryId(null);
+    setMergeConfirm(false);
+  };
+
+  const handleMerge = async () => {
+    if (!mergePrimaryId || mergeSelected.size < 2) return;
+    setMerging(true);
+    setMergeMessage('');
+    try {
+      const secondaryIds = [...mergeSelected].filter((id) => id !== mergePrimaryId);
+      const result = await mergePatients(mergePrimaryId, secondaryIds);
+      setMergeMessage(
+        `Merged ${secondaryIds.length} duplicate${secondaryIds.length !== 1 ? 's' : ''} into primary patient. ${result.movedReports} report${result.movedReports !== 1 ? 's' : ''} transferred.`
+      );
+      cancelMerge();
+      await loadPatients();
+    } catch (err: any) {
+      setMergeMessage(`Merge failed: ${err.message}`);
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  const mergeSelectedPatients = patients.filter((p) => mergeSelected.has(p.id));
+  const primaryPatient = mergePrimaryId ? patients.find((p) => p.id === mergePrimaryId) : null;
+
   const handleCsvImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -173,7 +229,7 @@ export const PatientDatabase: React.FC = () => {
             className="w-full pl-11 pr-4 py-3 rounded-2xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15"
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <button
             onClick={openAddForm}
             className="px-5 py-3 rounded-2xl bg-teal-900 text-white font-black text-xs uppercase tracking-widest hover:bg-black transition-all flex items-center gap-2 shadow-lg"
@@ -189,6 +245,23 @@ export const PatientDatabase: React.FC = () => {
             <i className={`fa-solid ${importing ? 'fa-circle-notch animate-spin' : 'fa-file-csv'}`}></i>
             {importing ? 'Importing...' : 'Import CSV'}
           </button>
+          {!mergeMode ? (
+            <button
+              onClick={startMergeMode}
+              className="px-5 py-3 rounded-2xl bg-white text-indigo-600 border border-indigo-200 font-black text-xs uppercase tracking-widest hover:bg-indigo-50 transition-all flex items-center gap-2"
+            >
+              <i className="fa-solid fa-code-merge"></i>
+              Merge Patients
+            </button>
+          ) : (
+            <button
+              onClick={cancelMerge}
+              className="px-5 py-3 rounded-2xl bg-white text-slate-500 border border-slate-200 font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2"
+            >
+              <i className="fa-solid fa-xmark"></i>
+              Cancel Merge
+            </button>
+          )}
           <input
             ref={csvInputRef}
             type="file"
@@ -199,15 +272,122 @@ export const PatientDatabase: React.FC = () => {
         </div>
       </div>
 
-      {importMessage && (
+      {(importMessage || mergeMessage) && (
         <div className={`mb-4 p-4 rounded-2xl flex items-center gap-3 ${
-          importMessage.includes('Successfully') ? 'bg-emerald-50 border border-emerald-200' : 'bg-red-50 border border-red-200'
+          (importMessage || mergeMessage).includes('Successfully') || (importMessage || mergeMessage).includes('Merged')
+            ? 'bg-emerald-50 border border-emerald-200'
+            : (importMessage || mergeMessage).includes('failed') || (importMessage || mergeMessage).includes('Failed')
+              ? 'bg-red-50 border border-red-200'
+              : 'bg-emerald-50 border border-emerald-200'
         }`}>
-          <i className={`fa-solid ${importMessage.includes('Successfully') ? 'fa-circle-check text-emerald-500' : 'fa-circle-exclamation text-red-500'}`}></i>
-          <span className={`text-sm font-bold ${importMessage.includes('Successfully') ? 'text-emerald-700' : 'text-red-700'}`}>{importMessage}</span>
-          <button onClick={() => setImportMessage('')} className="ml-auto text-slate-400 hover:text-slate-600">
+          <i className={`fa-solid ${
+            (importMessage || mergeMessage).includes('failed') || (importMessage || mergeMessage).includes('Failed')
+              ? 'fa-circle-exclamation text-red-500'
+              : 'fa-circle-check text-emerald-500'
+          }`}></i>
+          <span className={`text-sm font-bold ${
+            (importMessage || mergeMessage).includes('failed') || (importMessage || mergeMessage).includes('Failed')
+              ? 'text-red-700'
+              : 'text-emerald-700'
+          }`}>{importMessage || mergeMessage}</span>
+          <button onClick={() => { setImportMessage(''); setMergeMessage(''); }} className="ml-auto text-slate-400 hover:text-slate-600">
             <i className="fa-solid fa-xmark"></i>
           </button>
+        </div>
+      )}
+
+      {mergeMode && (
+        <div className="mb-6 bg-indigo-50/80 backdrop-blur-xl rounded-[2rem] shadow-xl border border-indigo-200 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+              <i className="fa-solid fa-code-merge text-lg"></i>
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-indigo-900 uppercase tracking-tight">Merge Patients</h3>
+              <p className="text-[10px] font-bold text-indigo-600/60 uppercase tracking-wider">
+                Select 2 or more patients to merge, then choose which one to keep as the primary record
+              </p>
+            </div>
+          </div>
+
+          {mergeSelected.size > 0 && (
+            <div className="space-y-3">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-indigo-800/50">
+                {mergeSelected.size} patient{mergeSelected.size !== 1 ? 's' : ''} selected — choose which to keep as primary:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {mergeSelectedPatients.map((p) => (
+                  <button
+                    key={p.id}
+                    onClick={() => setMergePrimaryId(p.id)}
+                    className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left ${
+                      mergePrimaryId === p.id
+                        ? 'border-indigo-500 bg-indigo-100 shadow-md'
+                        : 'border-indigo-100 bg-white hover:border-indigo-300'
+                    }`}
+                  >
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs ${
+                      mergePrimaryId === p.id ? 'bg-indigo-500 text-white' : 'bg-indigo-100 text-indigo-600'
+                    }`}>
+                      {mergePrimaryId === p.id ? <i className="fa-solid fa-crown text-xs"></i> : p.initials}
+                    </div>
+                    <div className="flex-grow min-w-0">
+                      <span className="text-sm font-bold text-indigo-950 block truncate">{p.full_name}</span>
+                      <span className="text-[9px] font-bold text-indigo-600/50 uppercase">
+                        {mergePrimaryId === p.id ? 'Primary — will be kept' : 'Will be merged into primary'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {mergeSelected.size >= 2 && mergePrimaryId && (
+                <div className="pt-2">
+                  {!mergeConfirm ? (
+                    <button
+                      onClick={() => setMergeConfirm(true)}
+                      disabled={merging}
+                      className="w-full py-3 rounded-xl bg-indigo-600 text-white font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+                    >
+                      <i className="fa-solid fa-code-merge"></i>
+                      Merge {mergeSelected.size - 1} Patient{mergeSelected.size - 1 !== 1 ? 's' : ''} into {primaryPatient?.full_name}
+                    </button>
+                  ) : (
+                    <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+                      <p className="text-xs font-bold text-red-800">
+                        <i className="fa-solid fa-triangle-exclamation mr-1"></i>
+                        This will permanently delete {mergeSelected.size - 1} patient record{mergeSelected.size - 1 !== 1 ? 's' : ''} and move all their reports to <strong>{primaryPatient?.full_name}</strong>. This cannot be undone.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={handleMerge}
+                          disabled={merging}
+                          className="flex-1 py-2.5 rounded-xl bg-red-600 text-white font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {merging ? <i className="fa-solid fa-circle-notch animate-spin"></i> : <i className="fa-solid fa-check"></i>}
+                          {merging ? 'Merging...' : 'Confirm Merge'}
+                        </button>
+                        <button
+                          onClick={() => setMergeConfirm(false)}
+                          disabled={merging}
+                          className="px-5 py-2.5 rounded-xl bg-white text-slate-500 border border-slate-200 font-bold text-xs uppercase tracking-widest hover:bg-slate-50"
+                        >
+                          Back
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {mergeSelected.size < 2 && (
+            <p className="text-xs font-bold text-indigo-600/50 flex items-center gap-2">
+              <i className="fa-solid fa-arrow-down"></i>
+              Use the checkboxes in the table below to select patients to merge
+            </p>
+          )}
         </div>
       )}
 
@@ -300,6 +480,11 @@ export const PatientDatabase: React.FC = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-teal-50">
+                  {mergeMode && (
+                    <th className="w-12 px-3 py-4 text-center text-[9px] font-black uppercase tracking-[0.2em] text-indigo-500">
+                      <i className="fa-solid fa-code-merge"></i>
+                    </th>
+                  )}
                   <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Name</th>
                   <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Client ID</th>
                   <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">DOB</th>
@@ -308,12 +493,33 @@ export const PatientDatabase: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((patient) => (
-                  <tr key={patient.id} className="border-b border-teal-50/50 hover:bg-teal-50/30 transition-colors">
+                {filtered.map((patient) => {
+                  const isSelectedForMerge = mergeSelected.has(patient.id);
+                  return (
+                  <tr key={patient.id} className={`border-b border-teal-50/50 hover:bg-teal-50/30 transition-colors ${
+                    isSelectedForMerge ? 'bg-indigo-50/40' : ''
+                  }`}>
+                    {mergeMode && (
+                      <td className="w-12 px-3 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelectedForMerge}
+                          onChange={() => toggleMergeSelect(patient.id)}
+                          className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-200 cursor-pointer accent-indigo-600"
+                        />
+                      </td>
+                    )}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center font-black text-xs">
-                          {patient.initials}
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs ${
+                          isSelectedForMerge && mergePrimaryId === patient.id
+                            ? 'bg-indigo-500 text-white'
+                            : 'bg-teal-100 text-teal-700'
+                        }`}>
+                          {isSelectedForMerge && mergePrimaryId === patient.id
+                            ? <i className="fa-solid fa-crown text-xs"></i>
+                            : patient.initials
+                          }
                         </div>
                         <span className="font-bold text-sm text-teal-950">{patient.full_name}</span>
                       </div>
@@ -365,7 +571,8 @@ export const PatientDatabase: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

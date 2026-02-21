@@ -212,6 +212,38 @@ export async function createPatient(fullName: string, dob?: string, clientId?: s
   return data!;
 }
 
+export async function mergePatients(primaryId: string, secondaryIds: string[]): Promise<{ movedReports: number }> {
+  let movedReports = 0;
+  for (const secId of secondaryIds) {
+    const { data: reports } = await supabase
+      .from('reports')
+      .select('id')
+      .eq('patient_id', secId);
+
+    if (reports && reports.length > 0) {
+      const { error } = await supabase
+        .from('reports')
+        .update({ patient_id: primaryId })
+        .eq('patient_id', secId);
+      if (error) throw new Error(`Failed to move reports: ${error.message}`);
+      movedReports += reports.length;
+    }
+
+    const { error: delError } = await supabase
+      .from('patients')
+      .delete()
+      .eq('id', secId);
+    if (delError) throw new Error(`Failed to delete merged patient: ${delError.message}`);
+  }
+
+  await supabase
+    .from('patients')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', primaryId);
+
+  return { movedReports };
+}
+
 export async function importPatients(patients: { full_name: string; dob?: string; client_id?: string }[]): Promise<number> {
   let imported = 0;
   for (const p of patients) {

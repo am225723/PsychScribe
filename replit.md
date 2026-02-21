@@ -68,6 +68,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - Full patient list with search by name, client ID, or DOB
 - Add and edit patient records (name, client ID, DOB)
 - Delete patients with confirmation (cascades to reports)
+- Merge duplicate patients: select 2+, pick primary, all reports transfer, duplicates removed
 - CSV bulk import with smart column detection (name, client_id, dob)
 - Existing patients matched by name are updated, not duplicated
 - Accessible from Dashboard card and bottom nav bar
