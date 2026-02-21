@@ -402,19 +402,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ isDriveLinked, accessToken
         ))}
       </div>
 
-      <div className="px-2 pt-2">
+      <div className="grid md:grid-cols-2 gap-4 px-2 pt-2">
         <button
           onClick={() => navigate('/batch')}
-          className="group w-full bg-gradient-to-r from-amber-50 to-orange-50 p-6 rounded-[2rem] border-2 border-amber-100 hover:border-amber-300 shadow-lg hover:shadow-2xl transition-all text-left flex items-center gap-6 active:scale-[0.99] cursor-pointer"
+          className="group bg-gradient-to-r from-amber-50 to-orange-50 p-6 rounded-[2rem] border-2 border-amber-100 hover:border-amber-300 shadow-lg hover:shadow-2xl transition-all text-left flex items-center gap-5 active:scale-[0.99] cursor-pointer"
         >
           <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-700 transition-transform group-hover:scale-110 flex-shrink-0">
             <i className="fa-solid fa-layer-group text-2xl"></i>
           </div>
-          <div className="flex-grow">
+          <div className="flex-grow min-w-0">
             <h3 className="text-lg font-black text-teal-950 uppercase tracking-tight">Batch Processing</h3>
-            <p className="text-sm text-teal-800/60 font-bold leading-relaxed mt-1">Upload multiple patient files and process them all at once. Results are saved automatically to the patient database.</p>
+            <p className="text-xs text-teal-800/60 font-bold leading-relaxed mt-1">Process multiple patient files at once with auto-save.</p>
           </div>
           <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
+            <i className="fa-solid fa-chevron-right text-white text-sm"></i>
+          </div>
+        </button>
+
+        <button
+          onClick={() => navigate('/patients')}
+          className="group bg-gradient-to-r from-teal-50 to-cyan-50 p-6 rounded-[2rem] border-2 border-teal-100 hover:border-teal-300 shadow-lg hover:shadow-2xl transition-all text-left flex items-center gap-5 active:scale-[0.99] cursor-pointer"
+        >
+          <div className="w-14 h-14 bg-teal-100 rounded-2xl flex items-center justify-center text-teal-700 transition-transform group-hover:scale-110 flex-shrink-0">
+            <i className="fa-solid fa-users text-2xl"></i>
+          </div>
+          <div className="flex-grow min-w-0">
+            <h3 className="text-lg font-black text-teal-950 uppercase tracking-tight">Patient Database</h3>
+            <p className="text-xs text-teal-800/60 font-bold leading-relaxed mt-1">View, add, edit patients and import from CSV.</p>
+          </div>
+          <div className="w-10 h-10 bg-teal-600 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all flex-shrink-0">
             <i className="fa-solid fa-chevron-right text-white text-sm"></i>
           </div>
         </button>

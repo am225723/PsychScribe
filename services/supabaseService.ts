@@ -174,3 +174,70 @@ export async function deletePatient(patientId: string): Promise<void> {
   const { error } = await supabase.from('patients').delete().eq('id', patientId);
   if (error) throw new Error(`Failed to delete patient: ${error.message}`);
 }
+
+export async function updatePatient(patientId: string, updates: { full_name?: string; dob?: string; client_id?: string }): Promise<Patient> {
+  const patch: Record<string, any> = { updated_at: new Date().toISOString() };
+  if (updates.full_name !== undefined) {
+    patch.full_name = updates.full_name.trim();
+    patch.initials = extractInitials(updates.full_name.trim());
+  }
+  if (updates.dob !== undefined) patch.dob = updates.dob || null;
+  if (updates.client_id !== undefined) patch.client_id = updates.client_id || null;
+
+  const { data, error } = await supabase
+    .from('patients')
+    .update(patch)
+    .eq('id', patientId)
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to update patient: ${error.message}`);
+  return data!;
+}
+
+export async function createPatient(fullName: string, dob?: string, clientId?: string): Promise<Patient> {
+  const cleanName = fullName.replace(/\*+/g, '').trim();
+  const { data, error } = await supabase
+    .from('patients')
+    .insert({
+      full_name: cleanName,
+      initials: extractInitials(cleanName),
+      dob: dob || null,
+      client_id: clientId || null,
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to create patient: ${error.message}`);
+  return data!;
+}
+
+export async function importPatients(patients: { full_name: string; dob?: string; client_id?: string }[]): Promise<number> {
+  let imported = 0;
+  for (const p of patients) {
+    const cleanName = p.full_name.replace(/\*+/g, '').trim();
+    if (!cleanName) continue;
+
+    const { data: existing } = await supabase
+      .from('patients')
+      .select('id')
+      .ilike('full_name', cleanName)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (p.dob) updates.dob = p.dob;
+      if (p.client_id) updates.client_id = p.client_id;
+      await supabase.from('patients').update(updates).eq('id', existing[0].id);
+    } else {
+      await supabase.from('patients').insert({
+        full_name: cleanName,
+        initials: extractInitials(cleanName),
+        dob: p.dob || null,
+        client_id: p.client_id || null,
+      });
+    }
+    imported++;
+  }
+  return imported;
+}

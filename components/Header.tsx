@@ -48,6 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
       case 'safety': return '/safety';
       case 'hipaa': return '/hipaa';
       case 'batch': return '/batch';
+      case 'patients': return '/patients';
       case 'support': return '/support';
       default: return '/';
     }
@@ -57,8 +58,8 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Home', icon: 'fa-house', page: 'home' },
     { label: 'Vault', icon: 'fa-box-archive', page: 'vault' },
     { label: 'Batch', icon: 'fa-layer-group', page: 'batch' },
+    { label: 'Patients', icon: 'fa-users', page: 'patients' },
     { label: 'Preceptor', icon: 'fa-user-graduate', page: 'preceptor' },
-    { label: 'Safety', icon: 'fa-shield-heart', page: 'safety', color: 'text-red-600' },
   ];
 
   const isDarpRoute = location.pathname === '/darp';

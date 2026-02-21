@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { FileData } from '../types';
 import {
   analyzeIntake,
@@ -7,7 +7,8 @@ import {
   PRECEPTOR_LENS_NAMES,
   preceptorAnalyze,
 } from '../services/geminiService';
-import { findOrCreatePatient, saveReport } from '../services/supabaseService';
+import { findOrCreatePatient, saveReport, getPatients } from '../services/supabaseService';
+import type { Patient } from '../services/supabaseService';
 
 interface BatchProcessingProps {
   isDriveLinked: boolean;
@@ -132,6 +133,11 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
   const [batchMessage, setBatchMessage] = useState('');
   const [currentJobIndex, setCurrentJobIndex] = useState<number>(0);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [dbPatients, setDbPatients] = useState<Patient[]>([]);
+
+  useEffect(() => {
+    getPatients().then(setDbPatients).catch(() => {});
+  }, []);
 
   const addJob = () => {
     setJobs((prev) => [...prev, createNewJob()]);
@@ -250,6 +256,45 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     if (isRunning) return;
     setJobs([]);
     setBatchMessage('');
+  };
+
+  const duplicateJobForSamePatient = (sourceJob: BatchJob) => {
+    if (isRunning) return;
+    const now = Date.now();
+    const newJob: BatchJob = {
+      jobId: `job-${now}`,
+      patient: { ...sourceJob.patient },
+      source: { files: [], extractedText: '', sourceName: '' },
+      clientId: sourceJob.clientId,
+      dateOfService: '',
+      steps: {
+        summary: createInitialStep(false),
+        treatment: createInitialStep(false),
+        darp: createInitialStep(true),
+        preceptor: createInitialStep(false),
+      },
+      createdAt: new Date().toISOString(),
+    };
+    setJobs((prev) => [...prev, newJob]);
+  };
+
+  const selectPatientForJob = (jobId: string, patientId: string) => {
+    const patient = dbPatients.find((p) => p.id === patientId);
+    if (!patient) return;
+    const nameParts = patient.full_name.split(/\s+/).filter(Boolean);
+    const firstInitial = nameParts[0]?.[0]?.toUpperCase() || '';
+    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || '';
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.jobId === jobId
+          ? {
+              ...job,
+              patient: { firstInitial, lastName, folderName: `${lastName}_${firstInitial}` },
+              clientId: patient.client_id || job.clientId || '',
+            }
+          : job,
+      ),
+    );
   };
 
   const buildCarryForwardContext = (
@@ -552,12 +597,44 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                     {status === 'running' ? 'Processing' : status === 'done' ? 'Complete' : status === 'error' ? 'Completed with errors' : 'Queued'}
                   </p>
                 </div>
-                {!isRunning && (
-                  <button onClick={() => removeJob(job.jobId)} className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50">
-                    <i className="fa-solid fa-trash"></i>
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {!isRunning && (
+                    <button
+                      onClick={() => duplicateJobForSamePatient(job)}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-[9px] font-black uppercase tracking-widest transition-all"
+                      title="Add another note for this same patient with different files and date"
+                    >
+                      <i className="fa-solid fa-copy"></i>
+                      Same Patient, New Note
+                    </button>
+                  )}
+                  {!isRunning && (
+                    <button onClick={() => removeJob(job.jobId)} className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50">
+                      <i className="fa-solid fa-trash"></i>
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {dbPatients.length > 0 && !isRunning && (
+                <div>
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-1">Select Patient from Database</label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) selectPatientForJob(job.jobId, e.target.value);
+                    }}
+                    className="w-full px-3 py-2 rounded-xl border border-indigo-100 bg-indigo-50/50 text-sm font-bold text-teal-950 focus:ring-2 focus:ring-indigo-100 focus:border-indigo-200 outline-none"
+                  >
+                    <option value="">— Pick a patient to auto-fill fields —</option>
+                    {dbPatients.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.full_name}{p.client_id ? ` (${p.client_id})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
@@ -594,7 +671,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                     value={job.dateOfService || ''}
                     onChange={(e) => updateJob(job.jobId, { dateOfService: e.target.value })}
                     disabled={isRunning}
-                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold"
+                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold text-teal-900"
                   />
                 </div>
               </div>

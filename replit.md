@@ -16,7 +16,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/index.html` - Entry HTML
 - `/index.tsx` - React entry point
 - `/App.tsx` - Main app component with routing and state management
-- `/components/Dashboard.tsx` - Home page with 3 document type cards + batch processing card
+- `/components/Dashboard.tsx` - Home page with 3 document type cards + batch processing + patient database cards
 - `/components/DocumentWorkspace.tsx` - Reusable workspace for all document types (summary/treatment/darp)
 - `/components/Header.tsx` - Top header with System Ready + Drive Sync indicators, sign-out button, bottom navigation bar
 - `/components/Login.tsx` - Email/password sign-in and sign-up form
@@ -31,6 +31,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/components/SafetyProtocols.tsx` - Clinical safety standards page
 - `/components/HipaaCompliance.tsx` - HIPAA compliance page
 - `/components/Support.tsx` - Support page
+- `/components/PatientDatabase.tsx` - Patient database page with list view, add/edit, CSV import
 - `/components/ProgressBar.tsx` - Processing progress indicator
 - `/services/geminiService.ts` - Gemini AI integration with prompts for all 3 document types
 - `/services/supabaseService.ts` - Supabase client with CRUD for patients and reports
@@ -45,6 +46,7 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - `/darp` - DARP Session Note workspace
 - `/vault` - Patient Archives (search, filter, sort)
 - `/batch` - Batch Processing (multi-file queue)
+- `/patients` - Patient Database (list, add/edit, CSV import)
 - `/preceptor` - Preceptor Case Review Generator
 - `/docs` - System Documentation
 - `/safety` - Clinical Safety Standards
@@ -62,12 +64,22 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - Patient lookup by name with upsert (create-or-find)
 - Reports linked to patients via patient_id foreign key
 
+## Patient Database
+- Full patient list with search by name, client ID, or DOB
+- Add and edit patient records (name, client ID, DOB)
+- Delete patients with confirmation (cascades to reports)
+- CSV bulk import with smart column detection (name, client_id, dob)
+- Existing patients matched by name are updated, not duplicated
+- Accessible from Dashboard card and bottom nav bar
+
 ## Batch Processing
 - Upload multiple files, select document type for each
 - Sequential AI processing (avoids API rate limits)
 - Progress tracking with per-file status indicators
 - Completed reports auto-save to Supabase with patient linkage
-- Results viewable inline with expand/collapse
+- Patient selector dropdown to auto-fill from database
+- "Same Patient, New Note" button to duplicate job for same patient with fresh files and date
+- Each batch group has its own files, date of service, and document type selections
 
 ## Google Drive Integration
 - Drive token persisted in localStorage (survives page reloads)
@@ -99,6 +111,9 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - Quick-suggestion buttons in chat for common actions
 
 ## Recent Changes
+- 2026-02-21: Added Patient Database page (/patients) with list, search, add/edit, delete, and CSV import
+- 2026-02-21: Enhanced Batch Processing with patient selector dropdown and "Same Patient, New Note" duplicate button
+- 2026-02-21: Added Patients tab to bottom nav bar and Dashboard card
 - 2026-02-20: Added Preceptor page replacing Docs in nav — 3-perspective AI case review with advisor chat
 - 2026-02-20: Fixed auth loading loop with 5s timeout and INITIAL_SESSION handling
 - 2026-02-20: Fixed login stuck on "Please wait" by closing SIGNED_IN handler gap

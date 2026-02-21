@@ -7,6 +7,7 @@ import { Vault } from './components/Vault';
 import { BatchProcessing } from './components/BatchProcessing';
 import { Documentation } from './components/Documentation';
 import { Preceptor } from './components/Preceptor';
+import { PatientDatabase } from './components/PatientDatabase';
 import { SafetyProtocols } from './components/SafetyProtocols';
 import { HipaaCompliance } from './components/HipaaCompliance';
 import { Support } from './components/Support';
@@ -30,7 +31,7 @@ import {
   type VaultItem,
 } from './services/vaultService';
 
-export type Page = 'home' | 'vault' | 'batch' | 'preceptor' | 'safety' | 'hipaa' | 'support';
+export type Page = 'home' | 'vault' | 'batch' | 'preceptor' | 'patients' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
 
 export interface ReportHistoryItem {
@@ -563,6 +564,7 @@ const App: React.FC = () => {
             path="/preceptor"
             element={<Preceptor initialVaultItem={selectedVaultItem} onSaveVaultItem={handleSavePreceptorVaultItem} />}
           />
+          <Route path="/patients" element={<PatientDatabase />} />
           <Route path="/docs" element={<Documentation />} />
           <Route path="/safety" element={<SafetyProtocols />} />
           <Route path="/hipaa" element={<HipaaCompliance />} />
