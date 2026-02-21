@@ -1,8 +1,13 @@
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { FileData } from '../types';
-import { analyzeIntake } from '../services/geminiService';
+import {
+  analyzeIntake,
+  generateFinalCaseReview,
+  generateLensDifferencesExplainer,
+  PRECEPTOR_LENS_NAMES,
+  preceptorAnalyze,
+} from '../services/geminiService';
 import { findOrCreatePatient, saveReport } from '../services/supabaseService';
-import type { DocumentType, AnalysisMetadata } from '../services/geminiService';
 
 interface BatchProcessingProps {
   isDriveLinked: boolean;
@@ -10,619 +15,675 @@ interface BatchProcessingProps {
   onComplete: () => void;
 }
 
-interface GroupFile {
-  id: string;
-  fileName: string;
-  fileData: FileData;
+type BatchDocType = 'summary' | 'treatment' | 'darp' | 'preceptor';
+type BatchStepStatus = 'queued' | 'running' | 'done' | 'error';
+
+type BatchStep = {
+  enabled: boolean;
+  status: BatchStepStatus;
+  progress: number;
+  outputText?: string;
+  error?: string;
+};
+
+type BatchJob = {
+  jobId: string;
+  patient: { firstInitial: string; lastName: string; folderName?: string };
+  source: { files: FileData[]; extractedText?: string; sourceName?: string };
+  clientId?: string;
+  dateOfService?: string;
+  steps: Record<BatchDocType, BatchStep>;
+  createdAt: string;
+};
+
+type CarryForwardOptions = {
+  includeSummaryInTreatment: boolean;
+  includeSummaryInDarp: boolean;
+  includeTreatmentInDarp: boolean;
+};
+
+const STEP_ORDER: BatchDocType[] = ['summary', 'treatment', 'darp', 'preceptor'];
+
+const STEP_LABEL: Record<BatchDocType, string> = {
+  summary: 'Summary',
+  treatment: 'Treatment',
+  darp: 'DARP',
+  preceptor: 'Preceptor',
+};
+
+function createInitialStep(enabled = false): BatchStep {
+  return {
+    enabled,
+    status: 'queued',
+    progress: 0,
+  };
 }
 
-interface Session {
-  id: string;
-  dateOfService: string;
-  files: GroupFile[];
-  status: 'queued' | 'processing' | 'completed' | 'error';
-  patientName?: string;
-  error?: string;
+function createNewJob(): BatchJob {
+  const now = Date.now();
+  return {
+    jobId: `job-${now}`,
+    patient: {
+      firstInitial: '',
+      lastName: '',
+      folderName: '',
+    },
+    source: {
+      files: [],
+      extractedText: '',
+      sourceName: '',
+    },
+    clientId: '',
+    dateOfService: '',
+    steps: {
+      summary: createInitialStep(true),
+      treatment: createInitialStep(false),
+      darp: createInitialStep(false),
+      preceptor: createInitialStep(false),
+    },
+    createdAt: new Date().toISOString(),
+  };
 }
 
-interface ClientGroup {
-  id: string;
-  documentType: DocumentType;
-  files: GroupFile[];
-  clientId: string;
-  dateOfService: string;
-  sessions: Session[];
-  status: 'queued' | 'processing' | 'completed' | 'error';
-  patientName?: string;
-  error?: string;
+function extractPatientNameFromText(text: string, fallbackFirstInitial: string, fallbackLastName: string): string {
+  const patientMatch = text.match(/PATIENT_NAME:\s*(.*)/i);
+  if (patientMatch?.[1]) {
+    return patientMatch[1].trim().replace(/\*+/g, '');
+  }
+
+  const first = fallbackFirstInitial.trim().toUpperCase();
+  const last = fallbackLastName.trim();
+  if (first && last) {
+    return `${first}. ${last}`;
+  }
+  if (last) {
+    return last;
+  }
+  return 'Unknown Patient';
+}
+
+function splitPatientName(name: string): { firstInitial: string; lastName: string } {
+  const cleaned = name.replace(/\*+/g, '').trim();
+  if (!cleaned) return { firstInitial: '', lastName: '' };
+  const parts = cleaned.split(/\s+/).filter(Boolean);
+  const firstInitial = parts[0]?.[0]?.toUpperCase() || '';
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0];
+  return { firstInitial, lastName };
+}
+
+function getOverallJobStatus(job: BatchJob): BatchStepStatus {
+  const enabledSteps = STEP_ORDER.filter((step) => job.steps[step].enabled);
+  if (enabledSteps.length === 0) return 'queued';
+
+  if (enabledSteps.some((step) => job.steps[step].status === 'running')) return 'running';
+  if (enabledSteps.some((step) => job.steps[step].status === 'error')) return 'error';
+  if (enabledSteps.every((step) => job.steps[step].status === 'done')) return 'done';
+  return 'queued';
 }
 
 export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) => {
-  const [groups, setGroups] = useState<ClientGroup[]>([]);
+  const [jobs, setJobs] = useState<BatchJob[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [completedCount, setCompletedCount] = useState(0);
+  const [carryForward, setCarryForward] = useState<CarryForwardOptions>({
+    includeSummaryInTreatment: true,
+    includeSummaryInDarp: true,
+    includeTreatmentInDarp: true,
+  });
+  const [batchMessage, setBatchMessage] = useState('');
+  const [currentJobIndex, setCurrentJobIndex] = useState<number>(0);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
-  const abortRef = useRef(false);
 
-  const addGroup = () => {
-    const newGroup: ClientGroup = {
-      id: `group-${Date.now()}`,
-      documentType: 'summary',
-      files: [],
-      clientId: '',
-      dateOfService: '',
-      sessions: [],
-      status: 'queued',
-    };
-    setGroups(prev => [...prev, newGroup]);
+  const addJob = () => {
+    setJobs((prev) => [...prev, createNewJob()]);
   };
 
-  const removeGroup = (groupId: string) => {
-    if (!isRunning) {
-      setGroups(prev => prev.filter(g => g.id !== groupId));
-    }
+  const removeJob = (jobId: string) => {
+    if (isRunning) return;
+    setJobs((prev) => prev.filter((job) => job.jobId !== jobId));
   };
 
-  const updateGroup = (groupId: string, updates: Partial<ClientGroup>) => {
-    const dt = updates.documentType;
-    if (dt === 'darp') {
-      const group = groups.find(g => g.id === groupId);
-      if (group && group.documentType !== 'darp' && group.sessions.length === 0) {
-        updates.sessions = [{
-          id: `session-${Date.now()}`,
-          dateOfService: '',
-          files: [],
-          status: 'queued',
-        }];
-      }
-    } else if (dt !== undefined) {
-      updates.sessions = [];
-    }
-    setGroups(prev => prev.map(g => g.id === groupId ? { ...g, ...updates } : g));
+  const updateJob = (jobId: string, patch: Partial<BatchJob>) => {
+    setJobs((prev) => prev.map((job) => (job.jobId === jobId ? { ...job, ...patch } : job)));
   };
 
-  const addSession = (groupId: string) => {
-    const newSession: Session = {
-      id: `session-${Date.now()}`,
-      dateOfService: '',
-      files: [],
-      status: 'queued',
-    };
-    setGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, sessions: [...g.sessions, newSession] } : g
-    ));
+  const updateJobPatient = (jobId: string, patch: Partial<BatchJob['patient']>) => {
+    setJobs((prev) => prev.map((job) => (job.jobId === jobId ? { ...job, patient: { ...job.patient, ...patch } } : job)));
   };
 
-  const removeSession = (groupId: string, sessionId: string) => {
-    setGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, sessions: g.sessions.filter(s => s.id !== sessionId) } : g
-    ));
+  const updateJobSource = (jobId: string, patch: Partial<BatchJob['source']>) => {
+    setJobs((prev) => prev.map((job) => (job.jobId === jobId ? { ...job, source: { ...job.source, ...patch } } : job)));
   };
 
-  const updateSession = (groupId: string, sessionId: string, updates: Partial<Session>) => {
-    setGroups(prev => prev.map(g =>
-      g.id === groupId
-        ? { ...g, sessions: g.sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s) }
-        : g
-    ));
+  const updateStep = (jobId: string, stepType: BatchDocType, patch: Partial<BatchStep>) => {
+    setJobs((prev) =>
+      prev.map((job) =>
+        job.jobId === jobId
+          ? {
+              ...job,
+              steps: {
+                ...job.steps,
+                [stepType]: {
+                  ...job.steps[stepType],
+                  ...patch,
+                },
+              },
+            }
+          : job,
+      ),
+    );
   };
 
-  const readFilesToGroupFiles = async (selectedFiles: FileList): Promise<GroupFile[]> => {
-    const newFiles: GroupFile[] = [];
+  const readFilesToFileData = async (selectedFiles: FileList): Promise<FileData[]> => {
+    const nextFiles: FileData[] = [];
+
     for (let i = 0; i < selectedFiles.length; i++) {
       const file = selectedFiles[i];
-      const base64 = await new Promise<string>((resolve) => {
+      const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(',')[1]);
+          const result = String(reader.result || '');
+          resolve(result.split(',')[1] || '');
         };
+        reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
         reader.readAsDataURL(file);
       });
-      newFiles.push({
-        id: `file-${Date.now()}-${i}`,
-        fileName: file.name,
-        fileData: { mimeType: file.type, base64, name: file.name },
+
+      nextFiles.push({
+        name: file.name,
+        mimeType: file.type,
+        base64,
       });
     }
-    return newFiles;
+
+    return nextFiles;
   };
 
-  const handleFilesForGroup = async (groupId: string, selectedFiles: FileList) => {
-    const newFiles = await readFilesToGroupFiles(selectedFiles);
-    setGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, files: [...g.files, ...newFiles] } : g
-    ));
-    const ref = fileInputRefs.current[groupId];
-    if (ref) ref.value = '';
+  const handleFilePick = async (jobId: string, selectedFiles: FileList | null) => {
+    if (!selectedFiles || selectedFiles.length === 0) return;
+    const files = await readFilesToFileData(selectedFiles);
+
+    const firstFile = selectedFiles[0];
+    const guessed = splitPatientName(firstFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '));
+
+    setJobs((prev) =>
+      prev.map((job) => {
+        if (job.jobId !== jobId) return job;
+
+        return {
+          ...job,
+          source: {
+            ...job.source,
+            files: [...job.source.files, ...files],
+            sourceName: firstFile.name,
+          },
+          patient: {
+            ...job.patient,
+            firstInitial: job.patient.firstInitial || guessed.firstInitial,
+            lastName: job.patient.lastName || guessed.lastName,
+            folderName: job.patient.folderName || (guessed.lastName ? `${guessed.lastName}_${guessed.firstInitial || 'X'}` : ''),
+          },
+        };
+      }),
+    );
+
+    if (fileInputRefs.current[jobId]) {
+      fileInputRefs.current[jobId]!.value = '';
+    }
   };
 
-  const handleFilesForSession = async (groupId: string, sessionId: string, selectedFiles: FileList) => {
-    const newFiles = await readFilesToGroupFiles(selectedFiles);
-    setGroups(prev => prev.map(g =>
-      g.id === groupId
-        ? { ...g, sessions: g.sessions.map(s => s.id === sessionId ? { ...s, files: [...s.files, ...newFiles] } : s) }
-        : g
-    ));
-    const ref = fileInputRefs.current[`${groupId}-${sessionId}`];
-    if (ref) ref.value = '';
+  const removeSourceFile = (jobId: string, index: number) => {
+    updateJobSource(jobId, {
+      files: jobs.find((job) => job.jobId === jobId)?.source.files.filter((_, i) => i !== index) || [],
+    });
   };
 
-  const removeFileFromGroup = (groupId: string, fileId: string) => {
-    setGroups(prev => prev.map(g =>
-      g.id === groupId ? { ...g, files: g.files.filter(f => f.id !== fileId) } : g
-    ));
-  };
-
-  const removeFileFromSession = (groupId: string, sessionId: string, fileId: string) => {
-    setGroups(prev => prev.map(g =>
-      g.id === groupId
-        ? { ...g, sessions: g.sessions.map(s => s.id === sessionId ? { ...s, files: s.files.filter(f => f.id !== fileId) } : s) }
-        : g
-    ));
+  const toggleStepEnabled = (jobId: string, stepType: BatchDocType, enabled: boolean) => {
+    updateStep(jobId, stepType, {
+      enabled,
+      status: 'queued',
+      progress: 0,
+      error: undefined,
+    });
   };
 
   const clearAll = () => {
-    if (!isRunning) {
-      setGroups([]);
-      setCompletedCount(0);
-    }
+    if (isRunning) return;
+    setJobs([]);
+    setBatchMessage('');
   };
 
-  const processOneReport = async (
-    fileParts: { mimeType: string; data: string }[],
-    documentType: DocumentType,
-    metadata?: AnalysisMetadata
-  ) => {
-    const result = await analyzeIntake(fileParts, documentType, metadata);
-    const nameMatch = result.match(/PATIENT_NAME:\s*(.*)/i);
-    const patientName = nameMatch ? nameMatch[1].trim().replace(/\*+/g, '') : 'Unknown Patient';
-    const clientIdMatch = result.match(/CLIENT_ID:\s*(.*)/i);
-    const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : metadata?.clientId || undefined;
-    const dobMatch = result.match(/DOB:\s*(.*)/i);
-    const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
+  const buildCarryForwardContext = (
+    stepType: BatchDocType,
+    outputs: Partial<Record<BatchDocType, string>>,
+  ): string => {
+    const blocks: string[] = [];
 
-    try {
-      const patient = await findOrCreatePatient(patientName, dob, clientId);
-      await saveReport(patient.id, documentType, result, result.includes('🚨'));
-    } catch (dbErr) {
-      console.error('Database save error (report still generated):', dbErr);
+    if (stepType === 'treatment' && carryForward.includeSummaryInTreatment && outputs.summary) {
+      blocks.push(`CASE SUMMARY (GENERATED IN THIS BATCH):\n${outputs.summary}`);
     }
 
-    return patientName;
-  };
-
-  const processBatch = async () => {
-    setIsRunning(true);
-    abortRef.current = false;
-    setCompletedCount(0);
-    let completed = 0;
-
-    for (let i = 0; i < groups.length; i++) {
-      if (abortRef.current) break;
-      const group = groups[i];
-
-      if (group.documentType === 'darp') {
-        const validSessions = group.sessions.filter(s => s.files.length > 0);
-        if (validSessions.length === 0 || group.status === 'completed') {
-          if (group.status === 'completed') completed++;
-          continue;
-        }
-
-        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'processing' } : g));
-        let allSessionsDone = true;
-        let lastPatientName = '';
-
-        for (let j = 0; j < group.sessions.length; j++) {
-          if (abortRef.current) { allSessionsDone = false; break; }
-          const session = group.sessions[j];
-          if (session.files.length === 0 || session.status === 'completed') continue;
-
-          setGroups(prev => prev.map(g =>
-            g.id === group.id
-              ? { ...g, sessions: g.sessions.map(s => s.id === session.id ? { ...s, status: 'processing' } : s) }
-              : g
-          ));
-
-          try {
-            const fileParts = session.files.map(f => ({ mimeType: f.fileData.mimeType, data: f.fileData.base64 }));
-            const metadata: AnalysisMetadata | undefined = session.dateOfService
-              ? { dateOfService: session.dateOfService }
-              : undefined;
-            const patientName = await processOneReport(fileParts, 'darp', metadata);
-            lastPatientName = patientName;
-
-            setGroups(prev => prev.map(g =>
-              g.id === group.id
-                ? { ...g, sessions: g.sessions.map(s => s.id === session.id ? { ...s, status: 'completed', patientName } : s) }
-                : g
-            ));
-          } catch (err: any) {
-            allSessionsDone = false;
-            setGroups(prev => prev.map(g =>
-              g.id === group.id
-                ? { ...g, sessions: g.sessions.map(s => s.id === session.id ? { ...s, status: 'error', error: err.message || 'Processing failed' } : s) }
-                : g
-            ));
-          }
-        }
-
-        const finalStatus = allSessionsDone ? 'completed' : 'error';
-        if (allSessionsDone) completed++;
-        setCompletedCount(completed);
-        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: finalStatus, patientName: lastPatientName } : g));
-      } else {
-        if (group.status === 'completed' || group.files.length === 0) {
-          if (group.status === 'completed') completed++;
-          continue;
-        }
-
-        setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'processing' } : g));
-
-        try {
-          const fileParts = group.files.map(f => ({ mimeType: f.fileData.mimeType, data: f.fileData.base64 }));
-          const metadata: AnalysisMetadata | undefined =
-            group.documentType === 'treatment' && (group.clientId || group.dateOfService)
-              ? { clientId: group.clientId || undefined, dateOfService: group.dateOfService || undefined }
-              : undefined;
-
-          const patientName = await processOneReport(fileParts, group.documentType, metadata);
-          completed++;
-          setCompletedCount(completed);
-          setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'completed', patientName } : g));
-        } catch (err: any) {
-          setGroups(prev => prev.map(g => g.id === group.id ? { ...g, status: 'error', error: err.message || 'Processing failed' } : g));
-        }
+    if (stepType === 'darp') {
+      if (carryForward.includeSummaryInDarp && outputs.summary) {
+        blocks.push(`CASE SUMMARY (GENERATED IN THIS BATCH):\n${outputs.summary}`);
+      }
+      if (carryForward.includeTreatmentInDarp && outputs.treatment) {
+        blocks.push(`TREATMENT PLAN (GENERATED IN THIS BATCH):\n${outputs.treatment}`);
       }
     }
 
+    if (blocks.length === 0) return '';
+
+    // Carry-forward is explicitly labeled so the downstream note can separate generated context from source material.
+    return `${blocks.join('\n\n')}\n\nINSTRUCTIONS: Use the carry-forward context when clinically relevant, but keep source-grounded accuracy.`;
+  };
+
+  const runSingleStep = async (
+    job: BatchJob,
+    stepType: BatchDocType,
+    outputs: Partial<Record<BatchDocType, string>>,
+  ): Promise<string> => {
+    const filesAsInline = job.source.files.map((f) => ({ mimeType: f.mimeType, data: f.base64 }));
+    const hasText = Boolean(job.source.extractedText?.trim());
+    const content = hasText ? (job.source.extractedText || '') : filesAsInline;
+
+    if (stepType === 'preceptor') {
+      const lensOutputs: string[] = [];
+
+      for (let i = 0; i < PRECEPTOR_LENS_NAMES.length; i++) {
+        const targetProgress = i === 0 ? 15 : i === 1 ? 30 : 45;
+        updateStep(job.jobId, 'preceptor', {
+          status: 'running',
+          progress: targetProgress,
+        });
+        const lens = await preceptorAnalyze(content, i);
+        lensOutputs.push(lens);
+      }
+
+      updateStep(job.jobId, 'preceptor', { progress: 65 });
+      const finalReview = await generateFinalCaseReview(lensOutputs);
+
+      updateStep(job.jobId, 'preceptor', { progress: 80 });
+      await generateLensDifferencesExplainer(lensOutputs);
+
+      return finalReview;
+    }
+
+    const metadata =
+      (stepType === 'treatment' || stepType === 'darp') && (job.clientId || job.dateOfService)
+        ? {
+            clientId: job.clientId || undefined,
+            dateOfService: job.dateOfService || undefined,
+          }
+        : undefined;
+
+    const context = buildCarryForwardContext(stepType, outputs);
+
+    updateStep(job.jobId, stepType, { status: 'running', progress: 10 });
+    const text = await analyzeIntake(content, stepType, metadata, context || undefined);
+    updateStep(job.jobId, stepType, { progress: 90 });
+
+    return text;
+  };
+
+  const processBatch = async () => {
+    if (jobs.length === 0 || isRunning) return;
+
+    setIsRunning(true);
+    setBatchMessage('Batch processing started.');
+
+    setJobs((prev) =>
+      prev.map((job) => ({
+        ...job,
+        steps: {
+          summary: job.steps.summary.enabled ? { ...job.steps.summary, status: 'queued', progress: 0, outputText: undefined, error: undefined } : job.steps.summary,
+          treatment: job.steps.treatment.enabled ? { ...job.steps.treatment, status: 'queued', progress: 0, outputText: undefined, error: undefined } : job.steps.treatment,
+          darp: job.steps.darp.enabled ? { ...job.steps.darp, status: 'queued', progress: 0, outputText: undefined, error: undefined } : job.steps.darp,
+          preceptor: job.steps.preceptor.enabled ? { ...job.steps.preceptor, status: 'queued', progress: 0, outputText: undefined, error: undefined } : job.steps.preceptor,
+        },
+      })),
+    );
+
+    const snapshot = [...jobs];
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (let i = 0; i < snapshot.length; i++) {
+      const job = snapshot[i];
+      setCurrentJobIndex(i + 1);
+
+      if (job.source.files.length === 0 && !job.source.extractedText?.trim()) {
+        for (const stepType of STEP_ORDER) {
+          if (!job.steps[stepType].enabled) continue;
+          updateStep(job.jobId, stepType, {
+            status: 'error',
+            progress: 100,
+            error: 'No source input provided',
+          });
+        }
+        failureCount++;
+        continue;
+      }
+
+      const stepOutputs: Partial<Record<BatchDocType, string>> = {};
+      let jobFailed = false;
+
+      for (const stepType of STEP_ORDER) {
+        if (!job.steps[stepType].enabled) continue;
+
+        try {
+          const outputText = await runSingleStep(job, stepType, stepOutputs);
+          stepOutputs[stepType] = outputText;
+
+          if (stepType !== 'preceptor') {
+            const patientName = extractPatientNameFromText(outputText, job.patient.firstInitial, job.patient.lastName);
+            const clientIdMatch = outputText.match(/CLIENT_ID:\s*(.*)/i);
+            const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : job.clientId || undefined;
+            const dobMatch = outputText.match(/DOB:\s*(.*)/i);
+            const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
+
+            try {
+              const patient = await findOrCreatePatient(patientName, dob, clientId);
+              await saveReport(patient.id, stepType, outputText, outputText.includes('🚨'));
+            } catch (saveError) {
+              console.error('Failed to save report to database (continuing batch):', saveError);
+            }
+          }
+
+          updateStep(job.jobId, stepType, {
+            status: 'done',
+            progress: 100,
+            outputText,
+            error: undefined,
+          });
+        } catch (error: any) {
+          jobFailed = true;
+          updateStep(job.jobId, stepType, {
+            status: 'error',
+            progress: 100,
+            error: error?.message || `${STEP_LABEL[stepType]} failed`,
+          });
+        }
+      }
+
+      if (jobFailed) {
+        failureCount++;
+      } else {
+        successCount++;
+      }
+    }
+
+    setBatchMessage(`Batch finished. Success: ${successCount}. Failed: ${failureCount}.`);
     setIsRunning(false);
     onComplete();
   };
 
-  const stopBatch = () => {
-    abortRef.current = true;
-  };
+  const summaryCounts = useMemo(() => {
+    const counts = {
+      totalSteps: 0,
+      completedSteps: 0,
+      stepGroups: {
+        summary: { enabled: 0, done: 0 },
+        treatment: { enabled: 0, done: 0 },
+        darp: { enabled: 0, done: 0 },
+        preceptor: { enabled: 0, done: 0 },
+      } as Record<BatchDocType, { enabled: number; done: number }>,
+    };
 
-  const getTotalReportCount = () => {
-    let count = 0;
-    for (const g of groups) {
-      if (g.documentType === 'darp') {
-        count += g.sessions.filter(s => s.files.length > 0).length;
-      } else if (g.files.length > 0) {
-        count += 1;
+    for (const job of jobs) {
+      for (const stepType of STEP_ORDER) {
+        const step = job.steps[stepType];
+        if (!step.enabled) continue;
+        counts.totalSteps += 1;
+        counts.stepGroups[stepType].enabled += 1;
+
+        if (step.status === 'done') {
+          counts.completedSteps += 1;
+          counts.stepGroups[stepType].done += 1;
+        }
       }
     }
-    return count;
-  };
 
-  const getQueuedCount = () => {
-    let count = 0;
-    for (const g of groups) {
-      if (g.status !== 'queued') continue;
-      if (g.documentType === 'darp') {
-        count += g.sessions.filter(s => s.files.length > 0 && s.status === 'queued').length > 0 ? 1 : 0;
-      } else if (g.files.length > 0) {
-        count += 1;
-      }
-    }
-    return count;
-  };
+    return counts;
+  }, [jobs]);
 
-  const doneCount = groups.filter(g => g.status === 'completed').length;
-  const errorCount = groups.filter(g => g.status === 'error').length;
-  const validGroupCount = groups.filter(g => {
-    if (g.documentType === 'darp') return g.sessions.some(s => s.files.length > 0);
-    return g.files.length > 0;
-  }).length;
-  const progress = validGroupCount > 0 ? (doneCount / validGroupCount) * 100 : 0;
-  const queuedCount = getQueuedCount();
-
-  const docTypeLabel = (dt: DocumentType) => {
-    switch (dt) {
-      case 'summary': return 'Intake Summary';
-      case 'treatment': return 'Treatment Plan';
-      case 'darp': return 'Session Note';
-    }
-  };
-
-  const docTypeIcon = (dt: DocumentType) => {
-    switch (dt) {
-      case 'summary': return 'fa-file-medical';
-      case 'treatment': return 'fa-clipboard-list';
-      case 'darp': return 'fa-notes-medical';
-    }
-  };
-
-  const docTypeColor = (dt: DocumentType) => {
-    switch (dt) {
-      case 'summary': return { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' };
-      case 'treatment': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
-      case 'darp': return { bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-sky-200' };
-    }
-  };
-
-  const renderFileUpload = (refKey: string, onFiles: (files: FileList) => void, hint: string) => (
-    <div
-      onClick={() => fileInputRefs.current[refKey]?.click()}
-      className="border-2 border-dashed border-teal-100 hover:border-teal-300 hover:bg-teal-50/20 rounded-2xl p-5 text-center cursor-pointer group/upload transition-all"
-    >
-      <input
-        ref={(el) => { fileInputRefs.current[refKey] = el; }}
-        type="file"
-        multiple
-        accept=".pdf,image/*,.doc,.docx"
-        onChange={(e) => { if (e.target.files && e.target.files.length > 0) onFiles(e.target.files); }}
-        className="hidden"
-      />
-      <div className="space-y-1">
-        <div className="w-10 h-10 bg-teal-50 rounded-xl flex items-center justify-center mx-auto group-hover/upload:scale-110 transition-transform">
-          <i className="fa-solid fa-cloud-arrow-up text-teal-400 text-lg"></i>
-        </div>
-        <p className="font-black text-teal-950 uppercase text-xs tracking-widest">Add Documents</p>
-        <p className="text-[10px] font-bold text-teal-800/30 uppercase tracking-[0.2em]">{hint}</p>
-      </div>
-    </div>
-  );
-
-  const renderFileList = (files: GroupFile[], onRemove: (fileId: string) => void) => (
-    files.length > 0 && (
-      <div className="space-y-1.5">
-        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40">
-          {files.length} document{files.length !== 1 ? 's' : ''} attached
-        </span>
-        {files.map(file => (
-          <div key={file.id} className="flex items-center gap-3 py-2 px-3 bg-slate-50 rounded-xl">
-            <i className="fa-solid fa-file text-teal-300 text-sm"></i>
-            <span className="flex-grow text-sm font-bold text-teal-950 truncate">{file.fileName}</span>
-            <button
-              onClick={() => onRemove(file.id)}
-              className="w-6 h-6 rounded-md flex items-center justify-center text-teal-200 hover:text-red-500 hover:bg-red-50 transition-all"
-            >
-              <i className="fa-solid fa-xmark text-xs"></i>
-            </button>
-          </div>
-        ))}
-      </div>
-    )
-  );
+  const overallProgress = summaryCounts.totalSteps > 0 ? (summaryCounts.completedSteps / summaryCounts.totalSteps) * 100 : 0;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-28">
+    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-28">
       <div className="text-center space-y-3">
         <div className="inline-flex items-center gap-3 px-6 py-2 bg-amber-50 text-amber-800 rounded-full text-[10px] font-black uppercase tracking-[0.4em] mb-1 border border-amber-100 shadow-inner">
           <i className="fa-solid fa-layer-group text-sm"></i>
           Batch Engine
         </div>
         <h2 className="text-4xl font-black text-teal-950 tracking-tighter uppercase lg:text-5xl">Batch Processing</h2>
-        <p className="text-teal-800/60 text-base font-bold tracking-tight max-w-2xl mx-auto">Group documents by client, select the document type for each, and process them all sequentially.</p>
+        <p className="text-teal-800/60 text-base font-bold tracking-tight max-w-3xl mx-auto">
+          Multi-step pipeline per patient case with optional carry-forward context and per-note progress tracking.
+        </p>
+      </div>
+
+      <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] border border-teal-50 p-6 space-y-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40">Carry-Forward Options</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <label className="flex items-center gap-2 font-bold text-teal-900">
+            <input
+              type="checkbox"
+              checked={carryForward.includeSummaryInTreatment}
+              onChange={(e) => setCarryForward((prev) => ({ ...prev, includeSummaryInTreatment: e.target.checked }))}
+              disabled={isRunning}
+            />
+            Include generated Case Summary in Treatment Plan input
+          </label>
+          <label className="flex items-center gap-2 font-bold text-teal-900">
+            <input
+              type="checkbox"
+              checked={carryForward.includeSummaryInDarp}
+              onChange={(e) => setCarryForward((prev) => ({ ...prev, includeSummaryInDarp: e.target.checked }))}
+              disabled={isRunning}
+            />
+            Include generated Case Summary in DARP input
+          </label>
+          <label className="flex items-center gap-2 font-bold text-teal-900">
+            <input
+              type="checkbox"
+              checked={carryForward.includeTreatmentInDarp}
+              onChange={(e) => setCarryForward((prev) => ({ ...prev, includeTreatmentInDarp: e.target.checked }))}
+              disabled={isRunning}
+            />
+            Include generated Treatment Plan in DARP input
+          </label>
+        </div>
+      </div>
+
+      <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] border border-teal-50 p-6 space-y-4">
+        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em]">
+          <span className="text-teal-800/50">Overall Batch Progress</span>
+          <span className="text-teal-800">{summaryCounts.completedSteps} / {summaryCounts.totalSteps} steps complete</span>
+        </div>
+        <div className="h-3 bg-teal-50 rounded-full overflow-hidden">
+          <div className="h-full bg-gradient-to-r from-teal-600 to-emerald-600 transition-all" style={{ width: `${overallProgress}%` }} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {STEP_ORDER.map((stepType) => {
+            const enabled = summaryCounts.stepGroups[stepType].enabled;
+            const done = summaryCounts.stepGroups[stepType].done;
+            const progress = enabled > 0 ? (done / enabled) * 100 : 0;
+            const remaining = Math.max(enabled - done, 0);
+
+            return (
+              <div key={stepType} className="bg-slate-50 rounded-xl p-3 border border-teal-50 space-y-2">
+                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                  <span className="text-teal-800">{STEP_LABEL[stepType]} Group</span>
+                  <span className="text-teal-700">{done} / {enabled}</span>
+                </div>
+                <div className="h-2 bg-white rounded-full overflow-hidden border border-teal-50">
+                  <div className="h-full bg-teal-600 transition-all" style={{ width: `${progress}%` }} />
+                </div>
+                <div className="text-[10px] font-bold text-teal-800/60 uppercase tracking-wider">Remaining: {remaining}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {isRunning && (
+          <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Processing batch group {currentJobIndex} of {jobs.length}</p>
+        )}
+        {batchMessage && <p className="text-xs font-bold text-teal-900/70">{batchMessage}</p>}
       </div>
 
       <div className="space-y-4">
-        {groups.map((group, groupIndex) => {
-          const colors = docTypeColor(group.documentType);
-          const statusBorder =
-            group.status === 'processing' ? 'border-amber-300 shadow-lg shadow-amber-100' :
-            group.status === 'completed' ? 'border-emerald-300' :
-            group.status === 'error' ? 'border-red-300' :
-            'border-teal-50';
+        {jobs.map((job, index) => {
+          const status = getOverallJobStatus(job);
 
           return (
-            <div
-              key={group.id}
-              className={`bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-xl border-2 ${statusBorder} overflow-hidden transition-all`}
-            >
-              <div className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${
-                      group.status === 'processing' ? 'bg-amber-100 text-amber-700' :
-                      group.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                      group.status === 'error' ? 'bg-red-100 text-red-700' :
-                      'bg-teal-50 text-teal-600'
-                    }`}>
-                      {group.status === 'processing' ? (
-                        <i className="fa-solid fa-dna animate-spin"></i>
-                      ) : group.status === 'completed' ? (
-                        <i className="fa-solid fa-check"></i>
-                      ) : group.status === 'error' ? (
-                        <i className="fa-solid fa-xmark"></i>
-                      ) : (
-                        <span>{groupIndex + 1}</span>
-                      )}
-                    </div>
-                    <div>
-                      <h3 className="font-black text-teal-950 text-sm uppercase tracking-tight">
-                        {group.status === 'completed' && group.patientName
-                          ? group.patientName
-                          : `Client Group ${groupIndex + 1}`}
-                      </h3>
-                      {group.status === 'error' && (
-                        <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{group.error || 'Some sessions failed'}</p>
-                      )}
-                      {group.status === 'processing' && (
-                        <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">
-                          {group.documentType === 'darp'
-                            ? `Processing ${group.sessions.length} session note${group.sessions.length !== 1 ? 's' : ''}...`
-                            : `Synthesizing ${group.files.length} document${group.files.length !== 1 ? 's' : ''}...`}
-                        </p>
-                      )}
-                      {group.status === 'completed' && (
-                        <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
-                          {group.documentType === 'darp'
-                            ? `${group.sessions.filter(s => s.status === 'completed').length} session note${group.sessions.filter(s => s.status === 'completed').length !== 1 ? 's' : ''} saved`
-                            : 'Saved to database'}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  {group.status === 'queued' && !isRunning && (
-                    <button
-                      onClick={() => removeGroup(group.id)}
-                      className="w-8 h-8 rounded-lg flex items-center justify-center text-teal-200 hover:text-red-600 hover:bg-red-50 transition-all"
-                    >
-                      <i className="fa-solid fa-trash text-sm"></i>
-                    </button>
-                  )}
+            <div key={job.jobId} className={`bg-white/80 backdrop-blur-xl rounded-[2rem] border-2 p-6 space-y-5 ${
+              status === 'running'
+                ? 'border-amber-300'
+                : status === 'done'
+                  ? 'border-emerald-300'
+                  : status === 'error'
+                    ? 'border-red-300'
+                    : 'border-teal-50'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-tight text-teal-950">Batch Group {index + 1}</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-teal-800/40">
+                    {status === 'running' ? 'Processing' : status === 'done' ? 'Complete' : status === 'error' ? 'Completed with errors' : 'Queued'}
+                  </p>
+                </div>
+                {!isRunning && (
+                  <button onClick={() => removeJob(job.jobId)} className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50">
+                    <i className="fa-solid fa-trash"></i>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-1">First Initial</label>
+                  <input
+                    value={job.patient.firstInitial}
+                    onChange={(e) => updateJobPatient(job.jobId, { firstInitial: e.target.value.toUpperCase().slice(0, 1) })}
+                    disabled={isRunning}
+                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-1">Last Name</label>
+                  <input
+                    value={job.patient.lastName}
+                    onChange={(e) => updateJobPatient(job.jobId, { lastName: e.target.value })}
+                    disabled={isRunning}
+                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-1">Client ID</label>
+                  <input
+                    value={job.clientId || ''}
+                    onChange={(e) => updateJob(job.jobId, { clientId: e.target.value })}
+                    disabled={isRunning}
+                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-1">Date of Service</label>
+                  <input
+                    type="date"
+                    value={job.dateOfService || ''}
+                    onChange={(e) => updateJob(job.jobId, { dateOfService: e.target.value })}
+                    disabled={isRunning}
+                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div
+                  onClick={() => fileInputRefs.current[job.jobId]?.click()}
+                  className="border-2 border-dashed border-teal-100 rounded-2xl p-4 text-center cursor-pointer hover:border-teal-300 hover:bg-teal-50/30"
+                >
+                  <input
+                    ref={(el) => {
+                      fileInputRefs.current[job.jobId] = el;
+                    }}
+                    type="file"
+                    multiple
+                    accept=".pdf,image/*,.doc,.docx,.txt,audio/*"
+                    onChange={(e) => handleFilePick(job.jobId, e.target.files)}
+                    className="hidden"
+                  />
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-teal-800">Add Source Files</p>
+                  <p className="text-[10px] font-bold text-teal-800/40 uppercase tracking-wider mt-1">Upload one or more files per group</p>
                 </div>
 
-                {group.status === 'queued' && !isRunning && (
-                  <>
-                    <div className="flex flex-wrap gap-2">
-                      {(['summary', 'treatment', 'darp'] as DocumentType[]).map(dt => {
-                        const dtColors = docTypeColor(dt);
-                        return (
-                          <button
-                            key={dt}
-                            onClick={() => updateGroup(group.id, { documentType: dt })}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.1em] transition-all flex items-center gap-2 border ${
-                              group.documentType === dt
-                                ? `${dtColors.bg} ${dtColors.text} ${dtColors.border} shadow-sm`
-                                : 'bg-white text-slate-300 border-slate-100 hover:border-slate-200'
-                            }`}
-                          >
-                            <i className={`fa-solid ${docTypeIcon(dt)} text-xs`}></i>
-                            {docTypeLabel(dt)}
+                {job.source.files.length > 0 && (
+                  <div className="space-y-1">
+                    {job.source.files.map((file, fileIndex) => (
+                      <div key={`${file.name}-${fileIndex}`} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
+                        <span className="text-xs font-bold text-teal-900 truncate">{file.name}</span>
+                        {!isRunning && (
+                          <button onClick={() => removeSourceFile(job.jobId, fileIndex)} className="text-red-400 hover:text-red-600">
+                            <i className="fa-solid fa-xmark"></i>
                           </button>
-                        );
-                      })}
-                    </div>
-
-                    {group.documentType === 'treatment' && (
-                      <>
-                        <div className="flex flex-wrap gap-3">
-                          <div className="flex-1 min-w-[200px]">
-                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Client ID</label>
-                            <input
-                              type="text"
-                              value={group.clientId}
-                              onChange={(e) => updateGroup(group.id, { clientId: e.target.value })}
-                              placeholder="Enter Client ID"
-                              className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 placeholder:text-teal-300"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-[200px]">
-                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Date of Service</label>
-                            <input
-                              type="date"
-                              value={group.dateOfService}
-                              onChange={(e) => updateGroup(group.id, { dateOfService: e.target.value })}
-                              className="w-full px-4 py-2.5 rounded-xl border border-teal-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300"
-                            />
-                          </div>
-                        </div>
-                        {renderFileUpload(group.id, (files) => handleFilesForGroup(group.id, files), '2-5 documents typical')}
-                        {renderFileList(group.files, (fileId) => removeFileFromGroup(group.id, fileId))}
-                      </>
-                    )}
-
-                    {group.documentType === 'summary' && (
-                      <>
-                        {renderFileUpload(group.id, (files) => handleFilesForGroup(group.id, files), '2-3 documents typical')}
-                        {renderFileList(group.files, (fileId) => removeFileFromGroup(group.id, fileId))}
-                      </>
-                    )}
-
-                    {group.documentType === 'darp' && (
-                      <div className="space-y-3">
-                        {group.sessions.map((session, sIdx) => (
-                          <div key={session.id} className="bg-sky-50/40 rounded-2xl border border-sky-100 p-4 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 bg-sky-100 rounded-lg flex items-center justify-center">
-                                  <span className="text-[10px] font-black text-sky-700">{sIdx + 1}</span>
-                                </div>
-                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-800/60">Session {sIdx + 1}</span>
-                              </div>
-                              {group.sessions.length > 1 && (
-                                <button
-                                  onClick={() => removeSession(group.id, session.id)}
-                                  className="w-6 h-6 rounded-md flex items-center justify-center text-sky-200 hover:text-red-500 hover:bg-red-50 transition-all"
-                                >
-                                  <i className="fa-solid fa-xmark text-xs"></i>
-                                </button>
-                              )}
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 block mb-1">Date of Service</label>
-                              <input
-                                type="date"
-                                value={session.dateOfService}
-                                onChange={(e) => updateSession(group.id, session.id, { dateOfService: e.target.value })}
-                                className="w-full px-4 py-2.5 rounded-xl border border-sky-100 bg-white text-sm font-bold text-teal-950 focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-300"
-                              />
-                            </div>
-                            {renderFileUpload(
-                              `${group.id}-${session.id}`,
-                              (files) => handleFilesForSession(group.id, session.id, files),
-                              '1-3 documents typical'
-                            )}
-                            {renderFileList(session.files, (fileId) => removeFileFromSession(group.id, session.id, fileId))}
-                          </div>
-                        ))}
-                        <button
-                          onClick={() => addSession(group.id)}
-                          className="w-full py-3 rounded-xl border-2 border-dashed border-sky-200 hover:border-sky-400 bg-white/50 hover:bg-sky-50/30 text-sky-600 font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2"
-                        >
-                          <i className="fa-solid fa-plus text-xs"></i>
-                          Add Another Session
-                        </button>
+                        )}
                       </div>
-                    )}
-                  </>
-                )}
-
-                {group.status !== 'queued' && group.documentType === 'darp' && (
-                  <div className="space-y-2">
-                    {group.sessions.map((session, sIdx) => {
-                      if (session.files.length === 0) return null;
-                      return (
-                        <div key={session.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${
-                          session.status === 'processing' ? 'bg-amber-50 border-amber-200' :
-                          session.status === 'completed' ? 'bg-emerald-50 border-emerald-200' :
-                          session.status === 'error' ? 'bg-red-50 border-red-200' :
-                          'bg-sky-50 border-sky-100'
-                        }`}>
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black ${
-                            session.status === 'processing' ? 'bg-amber-100 text-amber-700' :
-                            session.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                            session.status === 'error' ? 'bg-red-100 text-red-700' :
-                            'bg-sky-100 text-sky-700'
-                          }`}>
-                            {session.status === 'processing' ? <i className="fa-solid fa-dna animate-spin text-[10px]"></i> :
-                             session.status === 'completed' ? <i className="fa-solid fa-check text-[10px]"></i> :
-                             session.status === 'error' ? <i className="fa-solid fa-xmark text-[10px]"></i> :
-                             <span>{sIdx + 1}</span>}
-                          </div>
-                          <div className="flex-grow">
-                            <span className="text-xs font-black text-teal-950">Session {sIdx + 1}</span>
-                            <span className="text-[10px] font-bold text-teal-800/40 ml-2">
-                              {session.dateOfService || 'No date'} — {session.files.length} doc{session.files.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                          {session.status === 'completed' && session.patientName && (
-                            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">{session.patientName}</span>
-                          )}
-                          {session.status === 'error' && (
-                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">{session.error}</span>
-                          )}
-                        </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 )}
 
-                {(group.status === 'completed' || group.status === 'error') && group.documentType !== 'darp' && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${colors.bg} ${colors.text}`}>
-                      <i className={`fa-solid ${docTypeIcon(group.documentType)} mr-1`}></i>
-                      {docTypeLabel(group.documentType)}
-                    </span>
-                    <span className="text-[10px] font-bold text-teal-800/30 uppercase tracking-wider">
-                      {group.files.length} document{group.files.length !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-                )}
+                <div>
+                  <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-1">Optional Source Text</label>
+                  <textarea
+                    value={job.source.extractedText || ''}
+                    onChange={(e) => updateJobSource(job.jobId, { extractedText: e.target.value })}
+                    disabled={isRunning}
+                    rows={3}
+                    placeholder="Optional: paste source text. If provided, this is used as the primary source input."
+                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {STEP_ORDER.map((stepType) => (
+                  <label key={stepType} className="flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 text-xs font-black uppercase tracking-wider text-teal-800">
+                    <input
+                      type="checkbox"
+                      checked={job.steps[stepType].enabled}
+                      disabled={isRunning}
+                      onChange={(e) => toggleStepEnabled(job.jobId, stepType, e.target.checked)}
+                    />
+                    {STEP_LABEL[stepType]}
+                  </label>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {STEP_ORDER.map((stepType) => {
+                  const step = job.steps[stepType];
+                  const disabled = !step.enabled;
+
+                  return (
+                    <div key={stepType} className="bg-slate-50 rounded-xl p-3 border border-teal-50">
+                      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-2">
+                        <span className="text-teal-800">{STEP_LABEL[stepType]}</span>
+                        <span className="text-teal-700">{disabled ? '—' : `${step.progress}%`}</span>
+                      </div>
+                      <div className="h-2 bg-white rounded-full border border-teal-50 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${step.status === 'error' ? 'bg-red-500' : step.status === 'done' ? 'bg-emerald-600' : 'bg-teal-600'}`}
+                          style={{ width: `${disabled ? 0 : step.progress}%` }}
+                        />
+                      </div>
+                      <div className="mt-1 text-[10px] font-bold text-teal-800/70 uppercase tracking-wider">
+                        {disabled ? 'Disabled' : step.status}
+                        {step.error ? ` • ${step.error}` : ''}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
@@ -631,72 +692,34 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
 
       {!isRunning && (
         <button
-          onClick={addGroup}
-          className="w-full py-5 rounded-[2rem] border-2 border-dashed border-teal-200 hover:border-teal-400 bg-white/50 hover:bg-teal-50/30 text-teal-600 font-black text-sm uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3 active:scale-[0.99]"
+          onClick={addJob}
+          className="w-full py-5 rounded-[2rem] border-2 border-dashed border-teal-200 hover:border-teal-400 bg-white/50 hover:bg-teal-50/30 text-teal-600 font-black text-sm uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-3"
         >
           <i className="fa-solid fa-plus text-lg"></i>
-          Add Client Group
+          Add Batch Group
         </button>
       )}
 
-      {isRunning && (
-        <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-xl border border-teal-50 p-6 space-y-3">
-          <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em]">
-            <span className="text-teal-800/50">Processing Groups</span>
-            <span className="text-teal-800">{doneCount} / {validGroupCount}</span>
-          </div>
-          <div className="h-3 bg-teal-50 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-teal-500 to-emerald-500 rounded-full transition-all duration-500"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       <div className="flex gap-3">
-        {!isRunning ? (
-          <>
-            <button
-              onClick={processBatch}
-              disabled={queuedCount === 0}
-              className={`flex-1 py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] text-white shadow-2xl transition-all flex items-center justify-center gap-4 ${
-                queuedCount === 0
-                  ? 'bg-teal-100 cursor-not-allowed text-teal-800/30'
-                  : 'bg-teal-900 hover:bg-black hover:-translate-y-1 shadow-teal-900/20 active:translate-y-0'
-              }`}
-            >
-              <i className="fa-solid fa-bolt text-teal-400 text-lg"></i>
-              Process {queuedCount} Client Group{queuedCount !== 1 ? 's' : ''}
-            </button>
-            {groups.length > 0 && (
-              <button onClick={clearAll} className="px-6 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-wider text-red-400 hover:text-red-600 hover:bg-red-50 border-2 border-red-100 transition-all">
-                Clear
-              </button>
-            )}
-          </>
-        ) : (
+        <button
+          onClick={processBatch}
+          disabled={isRunning || jobs.length === 0}
+          className={`flex-1 py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] text-white shadow-2xl transition-all flex items-center justify-center gap-4 ${
+            isRunning || jobs.length === 0 ? 'bg-teal-100 cursor-not-allowed text-teal-800/30' : 'bg-teal-900 hover:bg-black'
+          }`}
+        >
+          <i className="fa-solid fa-bolt text-teal-400 text-lg"></i>
+          Process Batch
+        </button>
+        {!isRunning && jobs.length > 0 && (
           <button
-            onClick={stopBatch}
-            className="flex-1 py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] text-white bg-red-600 hover:bg-red-700 shadow-2xl transition-all flex items-center justify-center gap-4 active:translate-y-0"
+            onClick={clearAll}
+            className="px-6 py-5 rounded-[2rem] text-[10px] font-black uppercase tracking-wider text-red-400 hover:text-red-600 hover:bg-red-50 border-2 border-red-100 transition-all"
           >
-            <i className="fa-solid fa-stop text-lg"></i>
-            Stop After Current
+            Clear
           </button>
         )}
       </div>
-
-      {doneCount > 0 && !isRunning && (
-        <div className="bg-emerald-50 rounded-2xl border border-emerald-100 p-6 text-center space-y-2">
-          <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto">
-            <i className="fa-solid fa-circle-check text-emerald-600 text-2xl"></i>
-          </div>
-          <p className="font-black text-emerald-800 uppercase text-sm tracking-widest">Batch Complete</p>
-          <p className="text-[10px] font-bold text-emerald-600/60 uppercase tracking-wider">
-            {doneCount} group{doneCount !== 1 ? 's' : ''} processed ({getTotalReportCount()} total reports){errorCount > 0 ? ` • ${errorCount} had errors` : ''} — All saved to patient database
-          </p>
-        </div>
-      )}
     </div>
   );
 };

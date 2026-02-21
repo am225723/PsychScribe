@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Header } from './components/Header';
 import { Dashboard } from './components/Dashboard';
 import { DocumentWorkspace } from './components/DocumentWorkspace';
@@ -21,6 +21,14 @@ import type { Report } from './services/supabaseService';
 import { FileData } from './types';
 import type { DocumentType, AnalysisMetadata } from './services/geminiService';
 import type { Session } from '@supabase/supabase-js';
+import {
+  getVaultItems,
+  mergeVaultItemsWithUniqueKey,
+  removeVaultItemById,
+  saveVaultItems,
+  upsertVaultItem,
+  type VaultItem,
+} from './services/vaultService';
 
 export type Page = 'home' | 'vault' | 'batch' | 'preceptor' | 'safety' | 'hipaa' | 'support';
 export type ReportTab = 'clinical-report' | 'extended-record' | 'treatment-plan' | 'pdf-view' | 'darp-data' | 'darp-assessment' | 'darp-response' | 'darp-plan' | 'darp-icd10' | 'darp-cpt';
@@ -64,11 +72,30 @@ function reportToHistoryItem(report: Report): ReportHistoryItem {
   };
 }
 
+function reportToVaultItem(report: Report): VaultItem {
+  const patient = report.patient;
+  const firstInitial = patient?.initials?.[0]?.toUpperCase() || '';
+  const lastName = patient?.full_name?.split(/\s+/).filter(Boolean).pop() || '';
+
+  return {
+    id: `db-${report.id}`,
+    dbReportId: report.id,
+    createdAt: report.created_at,
+    updatedAt: report.created_at,
+    documentType: report.document_type,
+    patient: {
+      firstInitial,
+      lastName,
+    },
+    generatedText: report.content,
+    isUrgent: report.is_urgent,
+  };
+}
+
 type AuthState = 'loading' | 'unauthenticated' | 'mfa_challenge' | 'mfa_enroll_prompt' | 'authenticated';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [session, setSession] = useState<Session | null>(null);
@@ -76,9 +103,11 @@ const App: React.FC = () => {
   const [activeReportTab, setActiveReportTab] = useState<ReportTab>('clinical-report');
   const [isProcessing, setIsProcessing] = useState(false);
   const [report, setReport] = useState<string | null>(null);
-  const [currentDocType, setCurrentDocType] = useState<DocumentType>('summary');
+  const [activeDocumentType, setActiveDocumentType] = useState<DocumentType>('summary');
   const [error, setError] = useState<{ message: string; isQuota: boolean } | null>(null);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
+  const [vaultItems, setVaultItems] = useState<VaultItem[]>(() => getVaultItems());
+  const [selectedVaultItem, setSelectedVaultItem] = useState<VaultItem | null>(null);
   const [hasApiKey, setHasApiKey] = useState<boolean>(true);
   const [isChatOpen, setIsChatOpen] = useState(false);
 
@@ -169,6 +198,8 @@ const App: React.FC = () => {
     setSession(null);
     setAuthState('unauthenticated');
     setHistory([]);
+    setVaultItems([]);
+    setSelectedVaultItem(null);
     setReport(null);
     navigate('/');
   };
@@ -176,9 +207,16 @@ const App: React.FC = () => {
   const loadHistory = async () => {
     try {
       const reports = await getReports({ sortBy: 'newest' });
-      setHistory(reports.map(reportToHistoryItem));
+      const mappedHistory = reports.map(reportToHistoryItem);
+      const dbVaultItems = reports.map(reportToVaultItem);
+      const mergedVault = mergeVaultItemsWithUniqueKey([...dbVaultItems, ...getVaultItems()]);
+
+      saveVaultItems(mergedVault);
+      setHistory(mappedHistory);
+      setVaultItems(mergedVault);
     } catch (e) {
       console.error("Failed to load history from database:", e);
+      setVaultItems(getVaultItems());
     }
   };
 
@@ -258,14 +296,6 @@ const App: React.FC = () => {
     return () => clearInterval(checkScripts);
   }, [authState]);
 
-  useEffect(() => {
-    const workspaceRoutes = ['/summary', '/treatment', '/darp'];
-    if (workspaceRoutes.includes(location.pathname) && report) {
-      setReport(null);
-      setError(null);
-    }
-  }, [location.pathname]);
-
   const handleLinkDrive = () => {
     if (!tokenClient) {
       setError({ message: "Cloud sync library not yet ready. Please wait 2 seconds.", isQuota: false });
@@ -297,7 +327,9 @@ const App: React.FC = () => {
       const patient = await findOrCreatePatient(patientName, dob, clientId);
       const savedReport = await saveReport(patient.id, docType, content, content.includes('🚨'));
       const newItem = reportToHistoryItem(savedReport);
-      setHistory(prev => [newItem, ...prev]);
+      const nextVault = upsertVaultItem(reportToVaultItem(savedReport));
+      setHistory((prev) => [newItem, ...prev]);
+      setVaultItems(nextVault);
     } catch (e) {
       console.error("Failed to save to database, falling back to local:", e);
       const initials = patientName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
@@ -310,7 +342,20 @@ const App: React.FC = () => {
         isUrgent: content.includes('🚨'),
         documentType: docType,
       };
-      setHistory(prev => [newItem, ...prev]);
+      const nextVault = upsertVaultItem({
+        id: newItem.id,
+        createdAt: new Date().toISOString(),
+        documentType: docType,
+        patient: {
+          firstInitial: initials.slice(0, 1),
+          lastName: patientName.split(' ').filter(Boolean).pop() || '',
+        },
+        generatedText: content,
+        isUrgent: content.includes('🚨'),
+      });
+
+      setHistory((prev) => [newItem, ...prev]);
+      setVaultItems(nextVault);
     }
   };
 
@@ -325,7 +370,8 @@ const App: React.FC = () => {
           : await analyzeIntake(input.map(f => ({ mimeType: f.mimeType, data: f.base64 })), docType, metadata);
 
         setReport(result);
-        setCurrentDocType(docType);
+        setActiveDocumentType(docType);
+        setSelectedVaultItem(null);
         setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
         await saveToHistory(result, docType);
       } catch (err: any) {
@@ -341,13 +387,36 @@ const App: React.FC = () => {
   const handleReset = () => {
     setReport(null);
     setError(null);
+    setSelectedVaultItem(null);
     navigate('/');
   };
 
+  const openVaultItem = (item: VaultItem) => {
+    setSelectedVaultItem(item);
+    const docType = item.documentType;
+    // Manual verification: save a summary, refresh, open from Vault; it should hydrate this view directly (not Upload).
+
+    if (docType === 'preceptor') {
+      setReport(null);
+      navigate('/preceptor');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const hydratedText = item.generatedText || '';
+    setReport(hydratedText);
+    setActiveDocumentType(docType);
+    setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
+    const route = docType === 'treatment' ? '/treatment' : docType === 'darp' ? '/darp' : '/summary';
+    navigate(route);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const openPastReport = (item: ReportHistoryItem) => {
+    const docType = (item.documentType || 'summary') as DocumentType;
+    setSelectedVaultItem(null);
     setReport(item.content);
-    const docType = item.documentType || 'summary';
-    setCurrentDocType(docType as DocumentType);
+    setActiveDocumentType(docType);
     setActiveReportTab(docType === 'darp' ? 'darp-data' : 'clinical-report');
     const route = docType === 'treatment' ? '/treatment' : docType === 'darp' ? '/darp' : '/summary';
     navigate(route);
@@ -356,12 +425,29 @@ const App: React.FC = () => {
 
   const deleteHistoryItem = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    const target = vaultItems.find((item) => item.id === id);
+
     try {
-      await deleteReportDb(id);
+      if (target?.dbReportId) {
+        await deleteReportDb(target.dbReportId);
+      }
     } catch (err) {
       console.error("Failed to delete from database:", err);
     }
-    setHistory(prev => prev.filter(item => item.id !== id));
+
+    setHistory((prev) =>
+      prev.filter((item) => {
+        if (target?.dbReportId) {
+          return item.id !== target.dbReportId;
+        }
+        return item.id !== id;
+      }),
+    );
+    setVaultItems(removeVaultItemById(id));
+  };
+
+  const handleSavePreceptorVaultItem = (item: VaultItem) => {
+    setVaultItems(upsertVaultItem(item));
   };
 
   const workspaceProps = {
@@ -437,7 +523,7 @@ const App: React.FC = () => {
           <Route path="/summary" element={
             <DocumentWorkspace
               documentType="summary"
-              report={report}
+              report={activeDocumentType === 'summary' ? report : null}
               onProcess={createProcessHandler('summary')}
               {...workspaceProps}
             />
@@ -445,7 +531,7 @@ const App: React.FC = () => {
           <Route path="/treatment" element={
             <DocumentWorkspace
               documentType="treatment"
-              report={report}
+              report={activeDocumentType === 'treatment' ? report : null}
               onProcess={createProcessHandler('treatment')}
               {...workspaceProps}
             />
@@ -453,15 +539,15 @@ const App: React.FC = () => {
           <Route path="/darp" element={
             <DocumentWorkspace
               documentType="darp"
-              report={report}
+              report={activeDocumentType === 'darp' ? report : null}
               onProcess={createProcessHandler('darp')}
               {...workspaceProps}
             />
           } />
           <Route path="/vault" element={
             <Vault
-              history={history}
-              onOpenReport={openPastReport}
+              history={vaultItems}
+              onOpenReport={openVaultItem}
               onDeleteReport={deleteHistoryItem}
               onRefresh={loadHistory}
             />
@@ -473,7 +559,10 @@ const App: React.FC = () => {
               onComplete={loadHistory}
             />
           } />
-          <Route path="/preceptor" element={<Preceptor />} />
+          <Route
+            path="/preceptor"
+            element={<Preceptor initialVaultItem={selectedVaultItem} onSaveVaultItem={handleSavePreceptorVaultItem} />}
+          />
           <Route path="/docs" element={<Documentation />} />
           <Route path="/safety" element={<SafetyProtocols />} />
           <Route path="/hipaa" element={<HipaaCompliance />} />

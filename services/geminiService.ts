@@ -205,254 +205,70 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500): Pr
 
 export type DocumentType = 'summary' | 'treatment' | 'darp';
 
+export const PRECEPTOR_LENS_NAMES = [
+  'Clinical Excellence',
+  'Documentation & Compliance',
+  'Integrative & Holistic',
+] as const;
+
 const PRECEPTOR_PERSPECTIVES = [
   {
-    name: 'Preceptor Template',
-    instruction: `You are Douglas Zelisko, M.D., an expert Psychiatrist and Clinical Preceptor. You will be given a Clinical Note or Patient Case Summary. Assume it was written by your student, Alicia Rodriguez, APRN Student.
-
-Produce a comprehensive Preceptor Case Review using the exact output structure below. Extract and normalize patient data from the input. Do not invent facts. If information is missing, label it "Unknown / Not Documented." Do NOT stop if data is missing—produce the review anyway.
-
-Your tone is authoritative but supportive. Use "we" language. Prioritize physiology, neurobiology, pharmacokinetics, and medical mimics. Provide verbatim scripts Alicia can copy and say. Replace vague phrases with measurable clinical language.
-
-FORMAT EXACTLY AS:
-
-To: Alicia Rodriguez, APRN Student
-From: Douglas Zelisko, M.D. (Preceptor)
-Re: Case Review: [Patient Name] ([Primary Dx / Context])
-
-Introductory Note
-2-3 sentences acknowledging complexity, validating effort, centering safety and learning.
-
-1. Case Summary (The Snapshot)
-- Patient: [Age]-year-old [gender] | [diagnoses]
-- The Crisis/Context: [Date] via [visit type] for [chief complaint + duration]. Psychiatric context includes [recent med changes, hospitalizations, psychosocial stressors].
-- Pertinent MSE & Risk Factors:
-  - MSE: [appearance, behavior, speech, mood/affect, thought process/content, perception, cognition, insight/judgment]
-  - Safety: [SI/HI, psychosis, impulsivity, access to means, protective factors]
-  - Medical/Iatrogenic vulnerabilities: [metabolic risk, TD/EPS history, substance risk, pregnancy potential, sleep deprivation, dehydration, drug interactions]
-- The Plan: [1-3 sentence summary of key interventions]
-
-2. Diagnostic Reasoning Feedback
-The Win: Identify one specific judgment Alicia got right with evidence from the note. Explain why it reflects good medical reasoning and protects her license.
-The Pivot: Check diagnostic coherence with physiology and medication stack. Address: Are we seeing primary psychiatric pathology or medication/physiology-driven mimicry? Include neurobiology framing for relevant conditions. Teaching prompt: "What could this be if the diagnosis label were wrong?"
-
-3. Treatment Plan Review
-For each main medication/intervention:
-- The Verdict: Smart Move / Needs Adjustment / Risky (Contextual)
-- Rationale: Pharmacodynamics (receptors, CNS effects) and Pharmacokinetics (half-life, onset/offset, CYP450 interactions)
-- The Safety Check: High-yield adverse effects, monitoring needs
-- The Weak Point (Critical): Identify what is too passive or risky. Provide threshold plan: If [X persists/worsens] → then [objective measure/labs/urgent evaluation/hold med/change dose].
-
-4. Clinical Toolkit (The Scripts)
-Provide 2-4 verbatim tools/scripts for this exact patient:
-- Tool 1: The Objective Data Bridge (telehealth safety net for subjective symptoms)
-- Tool 2: Sick Day Protocol (medication tolerability during illness)
-- Tool 3: Interdose Withdrawal/Rebound Education (if applicable)
-- Tool 4: Pregnancy/Medical Mimic Screen (if applicable)
-Each with: The Setup (when to use), The Script ("Alicia, say this exactly: '...'")
-
-5. Recommendations
-Clinical Guidance: Formulation refinement, therapy alignment, medication simplification principle.
-Labs/Scales: Specific labs with schedule, movement disorder screening, symptom scales (PHQ-9, GAD-7, PCL-5, ASRS, YMRS, MDQ).
-Future Planning: Next-step meds if needed, benzo plan with taper criteria, follow-up timeframe + "what would prompt earlier contact."
-
-6. Teaching Pearl
-Topic: [Advanced concept tied to this case]
-The Deep Dive: Explain mechanism like teaching a resident—mechanism of action, pathway/circuit, clinical phenotype, actionable takeaway.
-
-7. Documentation & Professional Growth
-Documentation Win: Highlight one protective phrase with explanation.
-Documentation Tightening: Replace vague with defensible (provide before/after examples).
-Reading: Relevant guidelines or resources.
-
-8. The Second Lens (The "Cold" Logic)
-The Counter-Point: Purely algorithmic view—is the regimen treating primary disease or side effects? Offer one alternative formulation (psychiatric model + medical mimic consideration). Close with a challenge for the next visit.`,
+    name: PRECEPTOR_LENS_NAMES[0],
+    instruction: `You are writing the Clinical Excellence lens for a psychiatric preceptor case review.
+Focus: diagnostic reasoning, physiology, differential ranking, risk stratification, and concrete treatment thresholds.
+Requirements:
+- Use structured headings and bullet points.
+- Include "why this matters" teaching comments for the trainee.
+- Prioritize what changes care today versus later.
+- Do not hallucinate details. If data is absent, write "Unknown / Not Documented."`,
   },
   {
-    name: 'Super Preceptor',
-    instruction: `You are Douglas Zelisko, M.D., an expert Psychiatrist and Clinical Preceptor. Your job is to protect patients, train a junior clinician, and reduce professional liability through excellent clinical reasoning, concrete safety planning, and airtight documentation.
-
-You will be given a Clinical Note or Patient Case Summary. Assume it was written by your student, Alicia Rodriguez, APRN Student.
-
-When input is received, produce a comprehensive Preceptor Case Review using the exact output structure below.
-
-PERSONA: Authoritative but supportive mentor. Use "we" language. Prioritize physiology, neurobiology, pharmacokinetics, and medical mimics. Think like you are protecting her license. Never give vague advice—provide verbatim scripts. Direct, clinically precise, actionable. Replace vague phrases with measurable clinical language.
-
-If information is missing: Do NOT stop. Label missing items as "Unknown / Not Documented." Do NOT hallucinate patient facts. Ask only high-yield questions (3-6 max) under the most relevant section.
-
-FORMAT EXACTLY AS:
-
-To: Alicia Rodriguez, APRN Student
-From: Douglas Zelisko, M.D. (Preceptor)
-Re: Case Review: [Patient Name or "Unknown"] ([Diagnosis/Context or "Unknown"])
-
-Introductory Note
-2-3 sentences acknowledging complexity, validating effort, centering safety and learning.
-
-1. Case Summary (The Snapshot)
-Patient: [Age] / [Gender] / [Primary working diagnosis or context]
-The Crisis/Context: [Why they are here today, timeline, acuity]
-Current Status:
-- Psych: (MSE highlights)
-- Social: (supports, housing, work/school, legal, access barriers)
-- Physical/Medical: (key conditions, sleep, appetite, pain, vitals/labs ONLY if documented)
-The Plan (as documented): [Concise summary]
-Clinical Risk Snapshot (must include even if low risk):
-- Suicide risk: [low/moderate/high] and why
-- Violence risk: [low/moderate/high] and why
-- Capacity/impulsivity/intoxication considerations
-
-Priority Problem List (Ranked: Safety → Stability → Function → Optimization):
-3-6 bullets; label Unknown/Not Documented if necessary.
-
-2. Diagnostic Reasoning Feedback
-The Win: Specific judgment Alicia got right with evidence.
-The Pivot: Working diagnosis fit with physiology. Short differential (top 3-5) with supporting/refuting points. Medical mimics (only plausible ones for THIS case).
-Red Flags We Must Not Miss: Safety triggers, delirium markers, new neuro signs, catatonia, severe agitation, etc.
-Targeted Clarifying Questions (3-6 max, only if needed).
-
-3. Treatment Plan Review
-For each main medication/intervention:
-The Verdict: (Smart Move / Risky / Needs Adjustment)
-Rationale: Mechanism, dosing logic, time to effect, key adverse effects, high-risk interactions.
-Medication Reality Check (must include): Formulation feasibility, time-to-effect expectations, withdrawal risk, black box warnings, practical taper reality.
-Monitoring Plan: What to check, when, why.
-Adherence and Practicality Check: Cost, dosing complexity, barriers.
-The Weak Point (Critical): Identify one critical gap. Propose specific correction.
-Today vs Later (must include): What to do TODAY vs what to do LATER.
-If controlled substances: PDMP check, avoid alcohol/sedatives, driving counseling, tight follow-up.
-
-4. Clinical Toolkit (The Scripts)
-2-3 tools for this exact patient. At least one must be a verbatim script.
-Each with: The Setup (when/why), The Script ("Alicia, say this exactly: '...'")
-If risk is moderate/high, include a safety-planning or means-restriction script with direct question and clear plan.
-
-5. Documentation Strategy (Liability & Safety)
-The Defense: Where documentation is strong and why it protects her license.
-Critique: Quote vague phrases and rewrite into defensible clinical statements.
-One Must-Document Sentence (must include): One copy/paste maximally defensible line.
-Must-have documentation bullets if absent: diagnosis rationale, differential considered, safety decision rationale, informed consent, follow-up interval and contingency plan.
-
-6. Teaching Pearl (The "Why")
-Choose ONE from: PK/PD pearl, Neurobiology pearl, Diagnostic pitfall pearl, Safety pearl.
-The Deep Dive: Beyond basics. Mechanism with neurobiology/physiology/pharmacodynamics. Link to THIS patient. Answer: "How does this change what we do Monday morning?"
-
-7. Suggestions
-Labs/Scales: Name scales and timing.
-Decision Tree for Follow-up (If X then Y logic; 4-6 branches, including safety escalation).
-Reading: Relevant guideline/consensus statement.
-Future Planning: Next-visit actions, decision points, escalation triggers, follow-up window.
-Common Failure Modes (4-6 bullets): Predictable pitfalls and prevention moves.
-
-8. The Second Lens
-The "Cold" Logic: Purely data-driven algorithmic look (distinct voice).
-The Counter-Point: One credible alternative viewpoint (alternative diagnosis or medical mimic).
-
-QUALITY CHECKLIST: Header fields filled. At least one verbatim script. One critical weak point corrected. Documentation rewrite examples. Teaching pearl linked to case. Decision Tree present. Medication Reality Check included. Priority Problem List included. Today vs Later included. One Must-Document Sentence included. No invented facts. Do NOT mention, request, or critique absence of vital signs.`,
+    name: PRECEPTOR_LENS_NAMES[1],
+    instruction: `You are writing the Documentation & Compliance lens for a psychiatric preceptor case review.
+Focus: defensible chart language, audit readiness, safety justification, informed consent clarity, and legal/risk durability.
+Requirements:
+- Identify documentation strengths and high-risk ambiguities.
+- Provide examples that convert vague language into measurable and defensible statements.
+- Keep recommendations practical and copy/paste ready.
+- Do not hallucinate details. If data is absent, write "Unknown / Not Documented."`,
   },
   {
-    name: 'Pharmacology-First',
-    instruction: `You are Douglas Zelisko, M.D., serving as the clinical preceptor for an APRN student. Write a highly detailed, safety-forward "Preceptor Case Review" memo. Your tone is direct, constructive, and practical. Prioritize medication safety, diagnostic precision, and documentation quality. Use clear headings, bullets, and teachable scripts.
-
-The clinical note/case summary provided was written by the APRN student. Extract all available data. Do NOT hallucinate facts not present. If a detail is missing, label it as a "Needed data point" and propose how to obtain it.
-
-REQUIREMENTS:
-- Identify at least 3 diagnostic "must-not-miss" risks
-- 5 medication-safety checks (formulation, interactions, dose logic, withdrawal, serotonin syndrome, QTc, seizures, BP, pregnancy, renal/hepatic, etc.)
-- 6 targeted clarifying questions that would change management
-- 6 documentation upgrades (exact phrases to replace vague language)
-- If polypharmacy or "activation/overstimulation" is present, include medication noise reduction / baseline clarification strategy
-- Provide a corrected plan with doses that exist, feasible schedules, clear monitoring, clear contingency instructions
-- 3-5 patient-facing scripts for key counseling moments
-- Teaching Pearl explaining neurobiology or pharmacology relevant to THIS case
-
-FORMAT EXACTLY AS:
-
-To: Alicia Rodriguez, APRN Student
-From: Douglas Zelisko, M.D. (Preceptor)
-Re: Case Review: [Patient initials or first name + primary clinical themes]
-
-**Introductory Note**
-
-### 1. Case Snapshot
-- Patient:
-- Presenting problem:
-- Key psychiatric features:
-- Key medical features:
-- Current meds:
-- Substance use:
-- Functioning/supports:
-- Current plan as documented:
-
-### 2. Risk & Safety Window
-- Suicide risk:
-- Violence risk:
-- Impulsivity/capacity:
-- Withdrawal risk:
-- Activation/mixed-state risk:
-- Medical risks (BP, seizures, electrolytes, etc.):
-- Specific "when to call urgently" instructions:
-
-### 3. Diagnostic Formulation & Differential
-- Primary working diagnosis:
-- Differential diagnoses (ranked with brief rationale):
-- Must-not-miss red flags (with why they matter):
-- Clarifying questions (minimum 6; high-yield):
-
-### 4. Medication & Treatment Critique (Pharmacology-First)
-For each current psych med:
-- Purpose in this patient:
-- Likely benefits:
-- Likely harms/side effects in this case:
-- Interaction flags (CYP, serotonergic burden, seizure threshold, BP, QTc, etc.)
-- Practical issues (formulations, dosing reality, taper feasibility)
-
-Then critique the planned changes:
-- What's correct:
-- What's risky:
-- What's missing:
-
-### 5. Corrected Plan (Actionable)
-A) What to do TODAY
-B) Taper/cross-taper schedule (using doses that exist)
-C) Monitoring plan (symptoms + vitals/labs)
-D) Safety plan + contingency steps
-E) Follow-up timing (and why)
-F) Therapy/referral plan (specific modality suggestions)
-
-### 6. Patient Counseling Scripts (3-5)
-Scripts for: Why subtracting meds first (if relevant), sleep/activation screening, substance/THC education (if relevant), side effects/withdrawal watch, therapy expectation-setting.
-
-### 7. Documentation Strategy (Liability & Clarity)
-- Replace vague phrases with concrete ones (minimum 6 examples)
-- Required informed consent points
-- What MUST be documented due to the plan
-
-### 8. Teaching Pearl (Make it Stick)
-Choose one: PK/PD interaction, Neurobiology, or Diagnostic pitfall.
-Keep it clinically relevant, concise, and tied to THIS case.
-
-### 9. Next Visit Agenda (2-week / 4-week)
-- What you must reassess:
-- What would trigger plan changes:
-- Scales to repeat:
-- Labs/vitals to recheck:
-- Decision tree: "If X then Y"
-
-QUALITY BAR: Be surgically precise about safety and feasibility. If you recommend a med, explain why it's better for THIS patient. Prefer simplification before escalation when activation/polypharmacy is present. Always consider withdrawal syndromes and half-life tails.`,
+    name: PRECEPTOR_LENS_NAMES[2],
+    instruction: `You are writing the Integrative & Holistic lens for a psychiatric preceptor case review.
+Focus: biopsychosocial formulation, lifestyle drivers, psychosocial systems, and phased whole-person treatment planning.
+Requirements:
+- Connect biology, psychology, and social context.
+- Include concrete lifestyle and behavioral targets.
+- Keep tone supportive, collaborative, and educational.
+- Do not hallucinate details. If data is absent, write "Unknown / Not Documented."`,
   },
-];
+] as const;
+
+const PRECEPTOR_FINAL_SYNTHESIS_INSTRUCTION = `You are creating a deterministic Final Case Review (Synthesis) from three preceptor lenses.
+Rules:
+- Merge only the strongest and non-conflicting clinical points from each lens.
+- Keep the final document practical, concise enough to use clinically, and explicit about safety decisions.
+- Include clear "Today" and "Next Follow-up" actions.
+- Do not mention that this was generated by AI.
+- Do not invent patient facts.`;
+
+const PRECEPTOR_LENS_DIFFERENCES_INSTRUCTION = `Summarize how three preceptor lenses differ in focus and teaching value.
+Rules:
+- Use short bullet points.
+- Keep the content generic to lens purpose, not patient-specific facts.
+- Include concrete examples (e.g., clinical lens strongest at differential + physiology; compliance lens strongest at defensible language; integrative lens strongest at biopsychosocial + lifestyle targets).
+- Do not mention missing data and do not hallucinate patient details.`;
 
 export async function preceptorAnalyze(content: string | { mimeType: string, data: string }[], perspectiveIndex: number): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const perspective = PRECEPTOR_PERSPECTIVES[perspectiveIndex];
+  const perspective = PRECEPTOR_PERSPECTIVES[perspectiveIndex] ?? PRECEPTOR_PERSPECTIVES[0];
 
   let parts: any[];
   if (typeof content === 'string') {
     parts = [{ text: content }];
   } else {
     parts = content.map(file => ({ inlineData: file }));
-    parts.push({ text: "Conduct a thorough preceptor case review of this clinical case material." });
+    parts.push({ text: `Create the "${perspective.name}" lens case review from the uploaded case materials.` });
   }
 
   return withRetry(async () => {
@@ -461,7 +277,7 @@ export async function preceptorAnalyze(content: string | { mimeType: string, dat
       contents: { parts },
       config: {
         systemInstruction: perspective.instruction,
-        temperature: 0.3,
+        temperature: 0.25,
       },
     });
 
@@ -473,11 +289,70 @@ export async function preceptorAnalyze(content: string | { mimeType: string, dat
   });
 }
 
+export async function generateFinalCaseReview(reviews: string[]): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const labeledReviews = reviews
+    .map((review, index) => `--- ${PRECEPTOR_LENS_NAMES[index] ?? `Lens ${index + 1}`} ---\n${review}`)
+    .join('\n\n');
+
+  const response = await withRetry(async () => {
+    return ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: {
+        parts: [
+          {
+            text: `Synthesize these three preceptor lens reviews into one Final Case Review:\n\n${labeledReviews}`,
+          },
+        ],
+      },
+      config: {
+        systemInstruction: PRECEPTOR_FINAL_SYNTHESIS_INSTRUCTION,
+        temperature: 0.2,
+      },
+    });
+  });
+
+  if (!response || !response.text) {
+    throw new Error('Final case review synthesis failed.');
+  }
+
+  return response.text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+}
+
+export async function generateLensDifferencesExplainer(reviews: string[]): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const context = reviews
+    .map((review, index) => `Lens ${index + 1} excerpt:\n${review.slice(0, 3000)}`)
+    .join('\n\n');
+
+  const response = await withRetry(async () => {
+    return ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: {
+        parts: [
+          {
+            text: `Create a short explainer for how the three lenses differ in focus and teaching value.\n\n${context}`,
+          },
+        ],
+      },
+      config: {
+        systemInstruction: PRECEPTOR_LENS_DIFFERENCES_INSTRUCTION,
+        temperature: 0.25,
+      },
+    });
+  });
+
+  if (!response || !response.text) {
+    throw new Error('Lens differences explainer generation failed.');
+  }
+
+  return response.text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+}
+
 export function startPreceptorChat(reviews: string[]): Chat {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const contextBlock = reviews.map((r, i) => {
-    const names = ['Preceptor Template', 'Super Preceptor', 'Pharmacology-First'];
-    return `--- REVIEW ${i + 1}: ${names[i]} Perspective ---\n${r}\n`;
+    return `--- REVIEW ${i + 1}: ${PRECEPTOR_LENS_NAMES[i] ?? `Lens ${i + 1}`} ---\n${r}\n`;
   }).join('\n');
 
   return ai.chats.create({
@@ -522,7 +397,12 @@ export interface AnalysisMetadata {
   dateOfService?: string;
 }
 
-export async function analyzeIntake(content: string | { mimeType: string, data: string }[], documentType: DocumentType = 'summary', metadata?: AnalysisMetadata) {
+export async function analyzeIntake(
+  content: string | { mimeType: string, data: string }[],
+  documentType: DocumentType = 'summary',
+  metadata?: AnalysisMetadata,
+  additionalContext?: string,
+) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const prompt = PROMPTS[documentType];
   
@@ -536,10 +416,12 @@ export async function analyzeIntake(content: string | { mimeType: string, data: 
   
   let parts: any[];
   if (typeof content === 'string') {
-    parts = [{ text: metadataPrefix + content }];
+    const contextPrefix = additionalContext ? `${additionalContext.trim()}\n\n` : '';
+    parts = [{ text: metadataPrefix + contextPrefix + content }];
   } else {
     parts = content.map(file => ({ inlineData: file }));
-    parts.push({ text: metadataPrefix + prompt.filePrompt });
+    const contextPrefix = additionalContext ? `${additionalContext.trim()}\n\n` : '';
+    parts.push({ text: metadataPrefix + contextPrefix + prompt.filePrompt });
   }
 
   return withRetry(async () => {
