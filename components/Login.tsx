@@ -30,18 +30,19 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
         setIsSignUp(false);
         setPassword('');
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        if (!signInData?.session) throw new Error('No session returned');
 
-        try {
-          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-          if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-            onMfaRequired();
-          } else {
-            await onLogin();
-          }
-        } catch {
-          await onLogin();
+        const mfaCheck = await Promise.race([
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 3000)),
+        ]);
+        const aal = (mfaCheck as any)?.data;
+        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+          onMfaRequired();
+        } else {
+          onLogin();
         }
       }
     } catch (err: any) {

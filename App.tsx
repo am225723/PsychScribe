@@ -204,14 +204,8 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleLoginSuccess = async () => {
-    const { data: factors } = await supabase.auth.mfa.listFactors();
-    const hasVerifiedTotp = factors?.totp?.some(f => f.status === 'verified');
-    if (!hasVerifiedTotp) {
-      setAuthState('mfa_enroll_prompt');
-    } else {
-      setAuthState('authenticated');
-    }
+  const handleLoginSuccess = () => {
+    setAuthState('authenticated');
   };
 
   const handleSignOut = async () => {
