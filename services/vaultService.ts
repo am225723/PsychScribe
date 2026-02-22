@@ -14,6 +14,11 @@ export type VaultItem = {
   sourceMimeType?: string;
   sourceText?: string;
   generatedText?: string;
+  preceptorPp2Text?: string;
+  preceptorSuperText?: string;
+  preceptorMk3Text?: string;
+  tripleDifferencesExplainer?: string;
+  diamondStandardTakeaway?: string;
   preceptorV1Text?: string;
   preceptorV2Text?: string;
   differencesExplainer?: string;
@@ -61,6 +66,34 @@ function migrateItem(input: any): VaultItem {
     ? input.lensReviews.filter((x: unknown) => typeof x === 'string')
     : undefined;
 
+  const preceptorPp2Text = typeof input?.preceptorPp2Text === 'string'
+    ? input.preceptorPp2Text
+    : typeof input?.preceptorV1Text === 'string'
+      ? input.preceptorV1Text
+      : lensReviews?.[0];
+
+  const preceptorSuperText = typeof input?.preceptorSuperText === 'string'
+    ? input.preceptorSuperText
+    : typeof input?.preceptorV2Text === 'string'
+      ? input.preceptorV2Text
+      : lensReviews?.[1];
+
+  const preceptorMk3Text = typeof input?.preceptorMk3Text === 'string'
+    ? input.preceptorMk3Text
+    : lensReviews?.[2];
+
+  const tripleDifferencesExplainer = typeof input?.tripleDifferencesExplainer === 'string'
+    ? input.tripleDifferencesExplainer
+    : typeof input?.differencesExplainer === 'string'
+      ? input.differencesExplainer
+      : typeof input?.lensExplainer === 'string'
+        ? input.lensExplainer
+        : undefined;
+
+  const diamondStandardTakeaway = typeof input?.diamondStandardTakeaway === 'string'
+    ? input.diamondStandardTakeaway
+    : undefined;
+
   const preceptorV1Text = typeof input?.preceptorV1Text === 'string'
     ? input.preceptorV1Text
     : lensReviews?.[0];
@@ -78,7 +111,9 @@ function migrateItem(input: any): VaultItem {
     ? input.perfectCaseReviewEdits
     : undefined;
 
-  const fallbackPreceptorText = [preceptorV1Text, preceptorV2Text].filter(Boolean).join('\n\n');
+  const fallbackPreceptorText = [preceptorPp2Text, preceptorSuperText, preceptorMk3Text, preceptorV1Text, preceptorV2Text]
+    .filter(Boolean)
+    .join('\n\n');
   const generatedText = typeof input?.generatedText === 'string'
     ? input.generatedText
     : typeof input?.content === 'string'
@@ -101,6 +136,11 @@ function migrateItem(input: any): VaultItem {
     sourceMimeType: input?.sourceMimeType,
     sourceText: input?.sourceText,
     generatedText,
+    preceptorPp2Text,
+    preceptorSuperText,
+    preceptorMk3Text,
+    tripleDifferencesExplainer,
+    diamondStandardTakeaway,
     preceptorV1Text,
     preceptorV2Text,
     differencesExplainer,

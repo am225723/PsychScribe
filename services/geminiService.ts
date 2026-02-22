@@ -1,6 +1,5 @@
 import { GoogleGenAI, Chat } from "@google/genai";
-import ZELISKO_SUPER_PRECEPTOR_V1_VERBATIM from '../attached_assets/Pasted--SYSTEM-INSTRUCTIONS-DR-ZELISKO-SUPER-PRECEPTOR-CASE-RE_1771575703689.txt?raw';
-import ZELISKO_SUPER_PRECEPTOR_V2_VERBATIM from '../attached_assets/Pasted-You-are-Douglas-Zelisko-M-D-serving-as-the-clinical-pre_1771575997814.txt?raw';
+import ZELISKO_TRIPLE_OUTPUT_PROMPT_VERBATIM from '../attached_assets/ZELISKO_TRIPLE_OUTPUT_SYSTEM_PROMPT.txt?raw';
 
 const SYSTEM_INSTRUCTION = `You are a world-class Senior Psychiatric Medical Scribe and Clinical Intake Specialist. Your objective is to transform raw intake data into an exhaustive, high-fidelity "Clinical Synthesis Report". 
 
@@ -210,152 +209,291 @@ function cleanGeneratedText(text: string): string {
   return text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
 }
 
-const ZELISKO_SUPER_PRECEPTOR_V1 = ZELISKO_SUPER_PRECEPTOR_V1_VERBATIM;
-const ZELISKO_SUPER_PRECEPTOR_V2 = ZELISKO_SUPER_PRECEPTOR_V2_VERBATIM;
+const ZELISKO_TRIPLE_OUTPUT_SYSTEM_PROMPT = ZELISKO_TRIPLE_OUTPUT_PROMPT_VERBATIM;
 
-const FORMAT_LOCK = `
-OUTPUT STYLE LOCK (NON-NEGOTIABLE):
-- Match the “Zelisko memo” exemplar style: compact bullets, clinically dense, no fluff.
-- Use these exact section headers (with emojis) and order:
-  Header
-  Introductory Note
-  🧾 1. Case Summary (The Snapshot)
-  🩺 2. Diagnostic Reasoning Feedback
-  💊 3. Treatment Plan Review
-  🔁 4. Clinical Toolkit (The Scripts)
-  📑 5. Documentation Strategy (Liability & Safety)
-  🧠 6. Teaching Pearl (The "Why")
-  💡 7. Suggestions
-  8. The Second Lens
-- Inside sections, include the hallmark sub-elements from the exemplars:
-  - Clinical Risk Snapshot + Priority Problem List in section 1
-  - The Win / The Pivot + Differential + Red Flags + 3–6 Targeted Clarifying Questions in section 2
-  - Medication Reality Check + The Weak Point (Critical) + Monitoring Plan + Today vs Later in section 3
-  - At least 2 verbatim scripts in section 4 (include controlled-substance boundary script when relevant)
-  - In section 5: “Vague → Defensible” rewrites + One Must-Document Sentence + Must-Have Bullets
-  - In section 6: mechanism + “How this changes Monday morning”
-  - In section 7: labs/scales + decision tree + failure modes
-  - In section 8: Cold Logic + Counter-Point
-- Do not mention or criticize absent vitals. You may recommend monitoring as part of safe prescribing without saying “missing”.
-- Use plain text with bullet points (● or -). Avoid heavy markdown.
-- Start immediately with the Header line “To: …” (no preamble).
-`.trim();
+const OUTPUT_1_DELIMITER = '========== OUTPUT 1/3: PSYCH PRECEPTOR 2.0 ==========';
+const OUTPUT_2_DELIMITER = '========== OUTPUT 2/3: SUPER ==========';
+const OUTPUT_3_DELIMITER = '========== OUTPUT 3/3: MK3 ==========';
 
-const V1_V2_DIFFERENCES_INSTRUCTION = `Explain how v1 differs from v2: v1 includes [Taper Brakes + Risk Escalation Thresholds], v2 is slightly more compact and uses a different section layout. Keep generic.
+const TRIPLE_DIFFERENCES_INSTRUCTION = `Explain conceptually how Psych Preceptor 2.0, SUPER, and MK3 differ.
 Rules:
 - Use short bullet points.
 - Keep conceptual and teaching-focused.
 - Do not mention patient-specific details.
 - Do not mention missing data.`;
 
-function buildPreceptorParts(content: string | { mimeType: string; data: string }[]): any[] {
+const DIAMOND_GUIDANCE_INSTRUCTION = `You are creating two bundle pages from three psychiatric preceptor notes.
+Return exactly in this format:
+===== FRONT PAGE EDITS =====
+- bullet list of edits needed to produce a Diamond Standard case review
+
+===== FINAL TAKEAWAY =====
+- bullet list titled guidance for synthesis
+
+Rules:
+- Use concise bullets only.
+- No fabricated patient facts.
+- If a detail is absent, say "Unknown / Not Documented" as needed.
+- Keep it practical for charting and supervision.`;
+
+export interface ZeliskoTripleNotes {
+  pp2: string;
+  super: string;
+  mk3: string;
+  raw: string;
+}
+
+export interface DiamondStandardGuidance {
+  perfectCaseReviewEdits: string;
+  diamondStandardTakeaway: string;
+}
+
+function buildPreceptorParts(
+  content: string | { mimeType: string; data: string }[],
+  finalPromptText = 'Generate the preceptor case review now.',
+): any[] {
   if (typeof content === 'string') {
     return [{ text: content }];
   }
 
   const parts: any[] = content.map((file) => ({ inlineData: file }));
-  parts.push({ text: 'Generate the preceptor case review now.' });
+  parts.push({ text: finalPromptText });
   return parts;
 }
 
-function buildZeliskoInstruction(verbatimPrompt: string): string {
-  return `${verbatimPrompt}\n\n${FORMAT_LOCK}`;
+function findAllIndices(haystack: string, needle: string): number[] {
+  const positions: number[] = [];
+  let cursor = 0;
+
+  while (cursor < haystack.length) {
+    const idx = haystack.indexOf(needle, cursor);
+    if (idx < 0) break;
+    positions.push(idx);
+    cursor = idx + needle.length;
+  }
+
+  return positions;
 }
 
-async function generateZeliskoVariant(
+function parseTripleByDelimiters(text: string): Omit<ZeliskoTripleNotes, 'raw'> | null {
+  const idx3 = text.lastIndexOf(OUTPUT_3_DELIMITER);
+  if (idx3 < 0) return null;
+  const idx2 = text.lastIndexOf(OUTPUT_2_DELIMITER, idx3 - 1);
+  if (idx2 < 0) return null;
+  const idx1 = text.lastIndexOf(OUTPUT_1_DELIMITER, idx2 - 1);
+  if (idx1 < 0) return null;
+
+  const pp2 = text.slice(idx1 + OUTPUT_1_DELIMITER.length, idx2).trim();
+  const superText = text.slice(idx2 + OUTPUT_2_DELIMITER.length, idx3).trim();
+  const mk3 = text.slice(idx3 + OUTPUT_3_DELIMITER.length).trim();
+
+  if (!pp2 || !superText || !mk3) {
+    return null;
+  }
+
+  return {
+    pp2,
+    super: superText,
+    mk3,
+  };
+}
+
+function parseTripleFallback(text: string): Omit<ZeliskoTripleNotes, 'raw'> | null {
+  const toAnchor = 'To: Alicia Rodriguez, APRN Student';
+  const toIndices = findAllIndices(text, toAnchor);
+  if (toIndices.length < 2) {
+    return null;
+  }
+
+  let mk3Start = text.indexOf('Header\nTo: Alicia Rodriguez, APRN Student');
+  if (mk3Start < 0) mk3Start = text.indexOf('\nHeader\nTo: Alicia Rodriguez, APRN Student');
+  if (mk3Start < 0) mk3Start = text.indexOf('Re: MK3 Case Review:');
+  if (mk3Start < 0 && toIndices.length >= 3) mk3Start = toIndices[2];
+  if (mk3Start < 0) {
+    return null;
+  }
+
+  const beforeMk3 = text.slice(0, mk3Start);
+  const toBefore = findAllIndices(beforeMk3, toAnchor);
+  if (toBefore.length < 2) {
+    return null;
+  }
+
+  const pp2Start = toBefore[0];
+  const superStart = toBefore[1];
+
+  const pp2 = beforeMk3.slice(pp2Start, superStart).trim();
+  const superText = beforeMk3.slice(superStart).trim();
+  const mk3 = text.slice(mk3Start).trim();
+
+  if (!pp2 || !superText || !mk3) {
+    return null;
+  }
+
+  return {
+    pp2,
+    super: superText,
+    mk3,
+  };
+}
+
+function parseZeliskoTripleOutput(rawText: string): ZeliskoTripleNotes {
+  const cleaned = cleanGeneratedText(rawText);
+  const parsed = parseTripleByDelimiters(cleaned) || parseTripleFallback(cleaned);
+  if (!parsed) {
+    throw new Error('Unable to parse triple preceptor output into Psych Preceptor 2.0, SUPER, and MK3 sections.');
+  }
+
+  return {
+    ...parsed,
+    raw: cleaned,
+  };
+}
+
+function parseDiamondGuidance(text: string): DiamondStandardGuidance {
+  const cleaned = cleanGeneratedText(text);
+  const editsDelim = '===== FRONT PAGE EDITS =====';
+  const takeawayDelim = '===== FINAL TAKEAWAY =====';
+  const editsIdx = cleaned.indexOf(editsDelim);
+  const takeawayIdx = cleaned.indexOf(takeawayDelim);
+
+  if (editsIdx >= 0 && takeawayIdx > editsIdx) {
+    const perfectCaseReviewEdits = cleaned
+      .slice(editsIdx + editsDelim.length, takeawayIdx)
+      .trim();
+    const diamondStandardTakeaway = cleaned
+      .slice(takeawayIdx + takeawayDelim.length)
+      .trim();
+
+    return {
+      perfectCaseReviewEdits: perfectCaseReviewEdits || 'Unknown / Not Documented',
+      diamondStandardTakeaway: diamondStandardTakeaway || 'Unknown / Not Documented',
+    };
+  }
+
+  return {
+    perfectCaseReviewEdits: cleaned || 'Unknown / Not Documented',
+    diamondStandardTakeaway: cleaned || 'Unknown / Not Documented',
+  };
+}
+
+export async function generateZeliskoTripleOutputNotes(
   content: string | { mimeType: string; data: string }[],
-  verbatimPrompt: string,
-  variantLabel: 'v1' | 'v2',
-): Promise<string> {
+): Promise<ZeliskoTripleNotes> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const parts = buildPreceptorParts(content);
+  const parts = buildPreceptorParts(content, 'Generate all three preceptor case reviews now.');
+
   const response = await withRetry(async () => {
     return ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: { parts },
       config: {
-        systemInstruction: buildZeliskoInstruction(verbatimPrompt),
+        systemInstruction: ZELISKO_TRIPLE_OUTPUT_SYSTEM_PROMPT,
         temperature: 0.3,
       },
     });
   });
 
   if (!response?.text) {
-    throw new Error(`Zelisko Super Preceptor ${variantLabel} generation failed.`);
+    throw new Error('Triple preceptor generation failed.');
   }
 
-  return cleanGeneratedText(response.text);
+  return parseZeliskoTripleOutput(response.text);
 }
 
-export async function generateZeliskoSuperPreceptorV1(
-  content: string | { mimeType: string; data: string }[],
-): Promise<string> {
-  return generateZeliskoVariant(content, ZELISKO_SUPER_PRECEPTOR_V1, 'v1');
-}
-
-export async function generateZeliskoSuperPreceptorV2(
-  content: string | { mimeType: string; data: string }[],
-): Promise<string> {
-  return generateZeliskoVariant(content, ZELISKO_SUPER_PRECEPTOR_V2, 'v2');
-}
-
-export async function generateZeliskoSuperPreceptorNotes(
-  content: string | { mimeType: string; data: string }[],
-): Promise<{ v1: string; v2: string }> {
-  const v1 = await generateZeliskoSuperPreceptorV1(content);
-  const v2 = await generateZeliskoSuperPreceptorV2(content);
-  return {
-    v1,
-    v2,
-  };
-}
-
-export async function generateV1V2DifferencesExplainer(): Promise<string> {
+export async function generateTripleDifferencesExplainer(): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const response = await withRetry(async () => {
     return ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: {
-        parts: [{ text: 'Create a short conceptual differences explainer for Zelisko Super Preceptor v1 vs v2.' }],
+        parts: [{ text: 'Create a short conceptual differences explainer for Psych Preceptor 2.0 vs SUPER vs MK3.' }],
       },
       config: {
-        systemInstruction: V1_V2_DIFFERENCES_INSTRUCTION,
+        systemInstruction: TRIPLE_DIFFERENCES_INSTRUCTION,
         temperature: 0.2,
       },
     });
   });
 
   if (!response?.text) {
-    throw new Error('v1/v2 differences explainer generation failed.');
+    throw new Error('Triple differences explainer generation failed.');
   }
 
   return cleanGeneratedText(response.text);
 }
 
-export function startZeliskoPreceptorChat(v1Text: string, v2Text: string, differencesExplainer = ''): Chat {
+export async function generateDiamondStandardGuidance(
+  pp2Text: string,
+  superText: string,
+  mk3Text: string,
+): Promise<DiamondStandardGuidance> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+  const response = await withRetry(async () => {
+    return ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: {
+        parts: [
+          {
+            text: `Psych Preceptor 2.0:\n${pp2Text}\n\nSUPER:\n${superText}\n\nMK3:\n${mk3Text}`,
+          },
+        ],
+      },
+      config: {
+        systemInstruction: DIAMOND_GUIDANCE_INSTRUCTION,
+        temperature: 0.2,
+      },
+    });
+  });
+
+  if (!response?.text) {
+    throw new Error('Diamond guidance generation failed.');
+  }
+
+  return parseDiamondGuidance(response.text);
+}
+
+export function startZeliskoPreceptorChat(
+  pp2Text: string,
+  superText: string,
+  mk3Text: string,
+  differencesExplainer = '',
+  perfectCaseReviewEdits = '',
+  diamondStandardTakeaway = '',
+): Chat {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   return ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: {
-      systemInstruction: `You are a senior psychiatric preceptor AI assistant helping Dr. Zelisko refine two Super Preceptor note variants.
+      systemInstruction: `You are a senior psychiatric preceptor AI assistant helping Dr. Zelisko refine triple-output notes (Psych Preceptor 2.0, SUPER, MK3).
 
 You have access to:
---- Zelisko Super Preceptor v1 ---
-${v1Text}
+--- Psych Preceptor 2.0 ---
+${pp2Text}
 
---- Zelisko Super Preceptor v2 ---
-${v2Text}
+--- SUPER ---
+${superText}
+
+--- MK3 ---
+${mk3Text}
 
 --- Differences Explainer ---
 ${differencesExplainer || 'Not provided.'}
 
+--- Front-Page Perfect Case Review Edits ---
+${perfectCaseReviewEdits || 'Not provided.'}
+
+--- Diamond Standard Takeaway ---
+${diamondStandardTakeaway || 'Not provided.'}
+
 Your role is to:
-1. Compare v1 and v2 by section and identify tradeoffs.
+1. Compare PP2, SUPER, and MK3 by section and identify tradeoffs.
 2. Tighten language for chart-readiness and teaching clarity.
 3. Rewrite specific sections on request.
-4. Keep outputs practical, clinically actionable, and source-grounded.
+4. Draft a best-of merge while preserving source-grounded accuracy.
 5. Do not invent patient facts.
 
 TONE: Collaborative, intelligent, and efficient.`,

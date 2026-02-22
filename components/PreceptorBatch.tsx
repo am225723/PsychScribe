@@ -1,12 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  generateV1V2DifferencesExplainer,
-  generateZeliskoSuperPreceptorV1,
-  generateZeliskoSuperPreceptorV2,
+  generateDiamondStandardGuidance,
+  generateTripleDifferencesExplainer,
+  generateZeliskoTripleOutputNotes,
 } from '../services/geminiService';
 import {
   clearStoredDirectoryHandle,
-  generateZeliskoBundlePdf,
+  generateZeliskoTripleBundlePdf,
   getOrRequestPatientsParentDirectoryHandle,
   savePdfToDirectory,
   supportsFileSystemAccess,
@@ -31,8 +31,9 @@ type BatchRow = {
   status: BatchStatus;
   progress: number;
   message: string;
-  v1Progress: number;
-  v2Progress: number;
+  pp2Progress: number;
+  superProgress: number;
+  mk3Progress: number;
   pdfProgress: number;
   savedPath?: string;
   error?: string;
@@ -109,8 +110,9 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
         status: 'queued',
         progress: 0,
         message: 'Waiting',
-        v1Progress: 0,
-        v2Progress: 0,
+        pp2Progress: 0,
+        superProgress: 0,
+        mk3Progress: 0,
         pdfProgress: 0,
       };
     });
@@ -160,30 +162,35 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           status: 'running',
           progress: 5,
           message: 'Reading file...',
-          v1Progress: 0,
-          v2Progress: 0,
+          pp2Progress: 0,
+          superProgress: 0,
+          mk3Progress: 0,
           pdfProgress: 0,
         });
 
         const part = await toBase64Part(row.file);
 
-        updateRow(row.id, { progress: 20, message: 'Generating Zelisko v1...', v1Progress: 15, v2Progress: 0 });
-        const v1 = await generateZeliskoSuperPreceptorV1([part]);
-        updateRow(row.id, { progress: 40, v1Progress: 100, message: 'Generating Zelisko v2...', v2Progress: 20 });
-        const v2 = await generateZeliskoSuperPreceptorV2([part]);
-        updateRow(row.id, { progress: 55, v2Progress: 100 });
+        updateRow(row.id, { progress: 20, message: 'Generating PP2 + SUPER + MK3...', pp2Progress: 20, superProgress: 20, mk3Progress: 20 });
+        const notes = await generateZeliskoTripleOutputNotes([part]);
+        updateRow(row.id, { progress: 50, pp2Progress: 100, superProgress: 100, mk3Progress: 100 });
 
-        updateRow(row.id, { progress: 65, message: 'Generating v1/v2 differences...' });
-        const differencesExplainer = await generateV1V2DifferencesExplainer();
+        updateRow(row.id, { progress: 60, message: 'Generating differences explainer...' });
+        const differencesExplainer = await generateTripleDifferencesExplainer();
+
+        updateRow(row.id, { progress: 70, message: 'Generating front-page edits + takeaway...' });
+        const guidance = await generateDiamondStandardGuidance(notes.pp2, notes.super, notes.mk3);
 
         updateRow(row.id, { progress: 75, message: 'Creating bundle PDF...', pdfProgress: 35 });
-        const { doc, filename, pdfBytes } = generateZeliskoBundlePdf({
+        const { doc, filename, pdfBytes } = generateZeliskoTripleBundlePdf({
           patientFirstInitial: row.firstInitial,
           patientLastName: row.lastName,
           date: new Date(),
-          differencesExplainer,
-          v1,
-          v2,
+          tripleDifferencesExplainer: differencesExplainer,
+          perfectCaseReviewEdits: guidance.perfectCaseReviewEdits,
+          pp2: notes.pp2,
+          superNote: notes.super,
+          mk3: notes.mk3,
+          diamondStandardTakeaway: guidance.diamondStandardTakeaway,
         });
 
         if (downloadPdfs) {
@@ -192,6 +199,7 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
         updateRow(row.id, { progress: 85, pdfProgress: 70 });
 
         let savedPath: string | undefined;
+        let saveWarning = '';
         if (autoSaveToFolder && supportsFS) {
           if (!activeHandle) {
             activeHandle = await getOrRequestPatientsParentDirectoryHandle();
@@ -199,12 +207,18 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           }
 
           if (activeHandle) {
-            savedPath = await savePdfToDirectory({
-              pdfBytes,
-              filename,
-              patientsParentDirHandle: activeHandle,
-              patientFolderName: row.patientFolderName,
-            });
+            try {
+              savedPath = await savePdfToDirectory({
+                pdfBytes,
+                filename,
+                patientsParentDirHandle: activeHandle,
+                patientFolderName: row.patientFolderName,
+              });
+            } catch (saveError: any) {
+              saveWarning = saveError?.message || 'Auto-save failed';
+            }
+          } else {
+            saveWarning = 'Folder permission missing';
           }
         }
 
@@ -219,15 +233,43 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           },
           sourceFileName: row.file.name,
           sourceMimeType: row.file.type,
-          generatedText: [v1, v2].join('\n\n'),
-          preceptorV1Text: v1,
-          preceptorV2Text: v2,
+          generatedText: [
+            'Psych Preceptor 2.0',
+            notes.pp2,
+            '',
+            'SUPER',
+            notes.super,
+            '',
+            'MK3',
+            notes.mk3,
+            '',
+            'Differences',
+            differencesExplainer,
+            '',
+            'Edits for Perfect Case Review',
+            guidance.perfectCaseReviewEdits,
+            '',
+            'Diamond Standard Takeaway',
+            guidance.diamondStandardTakeaway,
+          ].join('\n'),
+          preceptorPp2Text: notes.pp2,
+          preceptorSuperText: notes.super,
+          preceptorMk3Text: notes.mk3,
+          tripleDifferencesExplainer: differencesExplainer,
+          diamondStandardTakeaway: guidance.diamondStandardTakeaway,
+          perfectCaseReviewEdits: guidance.perfectCaseReviewEdits,
+          preceptorV1Text: notes.pp2,
+          preceptorV2Text: notes.super,
           differencesExplainer,
-          title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
+          title: 'Dr. Zelisko — Triple Output Case Review Bundle',
         };
         onSaveVaultItem?.(vaultItem);
 
-        const resultMessage = savedPath
+        const resultMessage = saveWarning
+          ? downloadPdfs
+            ? `Done (downloaded; save warning: ${saveWarning})`
+            : `Done (save warning: ${saveWarning})`
+          : savedPath
           ? downloadPdfs
             ? 'Done (downloaded + saved)'
             : 'Done (saved)'
@@ -390,17 +432,23 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
                           style={{ width: `${row.progress}%` }}
                         />
                       </div>
-                      <div className="grid grid-cols-3 gap-2 text-[10px]">
+                      <div className="grid grid-cols-4 gap-2 text-[10px]">
                         <div>
-                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">v1</div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">pp2</div>
                           <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
-                            <div className="h-full bg-teal-500" style={{ width: `${row.v1Progress}%` }} />
+                            <div className="h-full bg-teal-500" style={{ width: `${row.pp2Progress}%` }} />
                           </div>
                         </div>
                         <div>
-                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">v2</div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">super</div>
                           <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
-                            <div className="h-full bg-indigo-500" style={{ width: `${row.v2Progress}%` }} />
+                            <div className="h-full bg-indigo-500" style={{ width: `${row.superProgress}%` }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">mk3</div>
+                          <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
+                            <div className="h-full bg-cyan-500" style={{ width: `${row.mk3Progress}%` }} />
                           </div>
                         </div>
                         <div>

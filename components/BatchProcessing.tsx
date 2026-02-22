@@ -2,9 +2,9 @@ import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { FileData } from '../types';
 import {
   analyzeIntake,
-  generateV1V2DifferencesExplainer,
-  generateZeliskoSuperPreceptorV1,
-  generateZeliskoSuperPreceptorV2,
+  generateDiamondStandardGuidance,
+  generateTripleDifferencesExplainer,
+  generateZeliskoTripleOutputNotes,
 } from '../services/geminiService';
 import { findOrCreatePatient, saveReport, getPatients } from '../services/supabaseService';
 import type { Patient } from '../services/supabaseService';
@@ -332,23 +332,32 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
 
     if (stepType === 'preceptor') {
       updateStep(job.jobId, 'preceptor', { status: 'running', progress: 20 });
-      const v1 = await generateZeliskoSuperPreceptorV1(content);
+      const notes = await generateZeliskoTripleOutputNotes(content);
 
       updateStep(job.jobId, 'preceptor', { progress: 60 });
-      const v2 = await generateZeliskoSuperPreceptorV2(content);
+      const differences = await generateTripleDifferencesExplainer();
 
       updateStep(job.jobId, 'preceptor', { progress: 80 });
-      const differences = await generateV1V2DifferencesExplainer();
+      const guidance = await generateDiamondStandardGuidance(notes.pp2, notes.super, notes.mk3);
 
       return [
-        '## Zelisko Super Preceptor v1',
-        v1,
+        '## Psych Preceptor 2.0',
+        notes.pp2,
         '',
-        '## Zelisko Super Preceptor v2',
-        v2,
+        '## SUPER',
+        notes.super,
         '',
-        '## Differences Between v1 and v2',
+        '## MK3',
+        notes.mk3,
+        '',
+        '## Differences Between PP2, SUPER, and MK3',
         differences,
+        '',
+        '## Front Page Edits To Reach A Perfect Case Review',
+        guidance.perfectCaseReviewEdits,
+        '',
+        '## What to take from each prompt to make the Diamond Standard Note4',
+        guidance.diamondStandardTakeaway,
       ].join('\n');
     }
 

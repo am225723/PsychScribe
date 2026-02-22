@@ -5,13 +5,16 @@ import {
   storePatientsParentHandle,
 } from './fsHandleStore';
 
-type ZeliskoBundleParams = {
+type ZeliskoTripleBundleParams = {
   patientFirstInitial: string;
   patientLastName: string;
   date: Date;
-  differencesExplainer: string;
-  v1: string;
-  v2: string;
+  tripleDifferencesExplainer?: string;
+  perfectCaseReviewEdits: string;
+  pp2: string;
+  superNote: string;
+  mk3: string;
+  diamondStandardTakeaway: string;
   title?: string;
 };
 
@@ -30,9 +33,11 @@ const HEADER_SIZE = 12;
 const BODY_SIZE = 10;
 
 const SECTION_PREFACE: Record<string, string> = {
-  'Differences Between v1 and v2': 'This page is a quick orientation to conceptual differences between Zelisko Super Preceptor v1 and v2.',
-  'Zelisko Super Preceptor v1': 'v1 is the comprehensive variant with expanded safety threshold framing and taper brake teaching structure.',
-  'Zelisko Super Preceptor v2': 'v2 is the compact variant with a streamlined section layout while preserving practical clinical actionability.',
+  'Front Page: Edits To Reach A Perfect Case Review': 'This front page lists high-yield edits to turn the generated bundle into a Diamond Standard case review.',
+  'Psych Preceptor 2.0': 'Lean, boundary-heavy supervision with rapid safety framing and documentation tightening.',
+  'SUPER': 'Comprehensive rubric with medication reality checks, today-vs-later sequencing, and a second diagnostic lens.',
+  'MK3': 'Nine-section operational template emphasizing safety window, corrected plan, scripts, and next-visit decision branches.',
+  'What to take from each prompt to make the Diamond Standard Note4': 'Synthesize the best signal from each template into one chart-ready note with clear risk logic and execution thresholds.',
 };
 
 function sanitizeNamePart(value: string): string {
@@ -122,7 +127,7 @@ export function buildFilename(patientFirstInitial: string, patientLastName: stri
   return base.includes(' ') ? base : base;
 }
 
-export function generateZeliskoBundlePdf(params: ZeliskoBundleParams): {
+export function generateZeliskoTripleBundlePdf(params: ZeliskoTripleBundleParams): {
   doc: jsPDF;
   filename: string;
   pdfBytes: Uint8Array;
@@ -131,10 +136,13 @@ export function generateZeliskoBundlePdf(params: ZeliskoBundleParams): {
     patientFirstInitial,
     patientLastName,
     date,
-    differencesExplainer,
-    v1,
-    v2,
-    title = 'Dr. Zelisko - Super Preceptor Case Review Bundle',
+    tripleDifferencesExplainer = '',
+    perfectCaseReviewEdits,
+    pp2,
+    superNote,
+    mk3,
+    diamondStandardTakeaway,
+    title = 'Dr. Zelisko - Triple Output Case Review Bundle',
   } = params;
 
   const doc = new jsPDF();
@@ -154,20 +162,32 @@ export function generateZeliskoBundlePdf(params: ZeliskoBundleParams): {
   const sectionStartY = addDivider(doc, TOP_MARGIN + 18);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(HEADER_SIZE);
-  doc.text('Differences Between v1 and v2', SIDE_MARGIN, sectionStartY);
+  doc.text('Front Page: Edits To Reach A Perfect Case Review', SIDE_MARGIN, sectionStartY);
 
   let y = sectionStartY + 8;
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(BODY_SIZE);
   doc.setTextColor(33, 74, 74);
-  y = writeWrappedText(doc, SECTION_PREFACE['Differences Between v1 and v2'], y);
+  y = writeWrappedText(doc, SECTION_PREFACE['Front Page: Edits To Reach A Perfect Case Review'], y);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(26, 26, 26);
-  writeWrappedText(doc, formatCaseReviewPdfText(differencesExplainer), y + 2);
+  const frontPageBody = [
+    tripleDifferencesExplainer ? `How PP2, SUPER, and MK3 differ:\n${tripleDifferencesExplainer}` : '',
+    'Edits to make this a perfect case review:',
+    perfectCaseReviewEdits || 'Unknown / Not Documented',
+  ].filter(Boolean).join('\n\n');
+  writeWrappedText(doc, formatCaseReviewPdfText(frontPageBody), y + 2);
 
-  writeSection(doc, 'Zelisko Super Preceptor v1', v1, true);
-  writeSection(doc, 'Zelisko Super Preceptor v2', v2, true);
+  writeSection(doc, 'Psych Preceptor 2.0', pp2, true);
+  writeSection(doc, 'SUPER', superNote, true);
+  writeSection(doc, 'MK3', mk3, true);
+  writeSection(
+    doc,
+    'What to take from each prompt to make the Diamond Standard Note4',
+    diamondStandardTakeaway,
+    true,
+  );
 
   const filename = buildFilename(patientFirstInitial, patientLastName, date);
   const rawBytes = doc.output('arraybuffer');
