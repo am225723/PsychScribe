@@ -7,10 +7,13 @@ DROP TABLE IF EXISTS patients;
 
 CREATE TABLE patients (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  full_name TEXT NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL DEFAULT '',
   initials TEXT NOT NULL,
   dob TEXT,
   client_id TEXT,
+  email TEXT,
+  phone TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -27,7 +30,8 @@ CREATE TABLE reports (
 CREATE INDEX idx_reports_patient_id ON reports(patient_id);
 CREATE INDEX idx_reports_document_type ON reports(document_type);
 CREATE INDEX idx_reports_created_at ON reports(created_at DESC);
-CREATE INDEX idx_patients_full_name ON patients(full_name);
+CREATE INDEX idx_patients_first_name ON patients(first_name);
+CREATE INDEX idx_patients_last_name ON patients(last_name);
 
 ALTER TABLE patients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;

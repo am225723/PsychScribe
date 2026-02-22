@@ -59,17 +59,17 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 3. **Session Note** (`/darp`) - DARP Progress Note (PDF/text/audio/visual input, multiple files) - Full DARP prompt with 6 sections: Data, Assessment, Response, Plan, ICD-10 Codes, CPT Codes
 
 ## Database (Supabase)
-- **patients** table: id, full_name, initials, dob, client_id, created_at, updated_at
+- **patients** table: id, first_name, last_name, initials, dob, client_id, email, phone, created_at, updated_at
 - **reports** table: id, patient_id (FK), document_type (summary/treatment/darp), content (JSONB with sections), metadata (JSONB), source_filename, created_at
-- Patient lookup by name with upsert (create-or-find)
+- Patient lookup by first_name + last_name with upsert (create-or-find)
 - Reports linked to patients via patient_id foreign key
 
 ## Patient Database
-- Full patient list with search by name, client ID, or DOB
-- Add and edit patient records (name, client ID, DOB)
+- Full patient list with search by name, client ID, email, or phone
+- Add and edit patient records (first name, last name, client ID, DOB, email, phone)
 - Delete patients with confirmation (cascades to reports)
 - Merge duplicate patients: select 2+, pick primary, all reports transfer, duplicates removed
-- CSV bulk import with smart column detection (name, client_id, dob)
+- CSV bulk import with smart column detection (first_name, last_name or full name, client_id, email, phone)
 - Existing patients matched by name are updated, not duplicated
 - Accessible from Dashboard card and bottom nav bar
 
@@ -112,6 +112,8 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - Quick-suggestion buttons in chat for common actions
 
 ## Recent Changes
+- 2026-02-22: Split patient name into first_name/last_name, added email and phone fields, removed date added column
+- 2026-02-22: Added 60-minute MFA session expiry for enhanced security
 - 2026-02-21: Added Patient Database page (/patients) with list, search, add/edit, delete, and CSV import
 - 2026-02-21: Enhanced Batch Processing with patient selector dropdown and "Same Patient, New Note" duplicate button
 - 2026-02-21: Added Patients tab to bottom nav bar and Dashboard card

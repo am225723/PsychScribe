@@ -64,7 +64,7 @@ function reportToHistoryItem(report: Report): ReportHistoryItem {
   const patient = report.patient;
   return {
     id: report.id,
-    patientName: patient?.full_name || 'Unknown Patient',
+    patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : 'Unknown Patient',
     initials: patient?.initials || 'XX',
     date: new Date(report.created_at).toLocaleDateString(),
     content: report.content,
@@ -76,7 +76,7 @@ function reportToHistoryItem(report: Report): ReportHistoryItem {
 function reportToVaultItem(report: Report): VaultItem {
   const patient = report.patient;
   const firstInitial = patient?.initials?.[0]?.toUpperCase() || '';
-  const lastName = patient?.full_name?.split(/\s+/).filter(Boolean).pop() || '';
+  const lastName = patient?.last_name || '';
 
   return {
     id: `db-${report.id}`,
