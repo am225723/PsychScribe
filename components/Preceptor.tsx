@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Chat } from '@google/genai';
 import {
-  generateDiamondStandardGuidance,
   generateTripleDifferencesExplainer,
   generateZeliskoTripleOutputNotes,
   startZeliskoPreceptorChat,
@@ -43,6 +42,7 @@ function defaultPatientFolder(lastName: string, firstInitial: string): string {
 function getTabBadgeColor(tabIndex: number): string {
   if (tabIndex === 1) return 'bg-indigo-100 text-indigo-700';
   if (tabIndex === 2) return 'bg-cyan-100 text-cyan-700';
+  if (tabIndex === 3) return 'bg-amber-100 text-amber-700';
   return 'bg-teal-100 text-teal-700';
 }
 
@@ -55,9 +55,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   const [preceptorPp2Text, setPreceptorPp2Text] = useState('');
   const [preceptorSuperText, setPreceptorSuperText] = useState('');
   const [preceptorMk3Text, setPreceptorMk3Text] = useState('');
+  const [preceptorDiamondText, setPreceptorDiamondText] = useState('');
   const [differencesExplainer, setDifferencesExplainer] = useState('');
-  const [perfectCaseReviewEdits, setPerfectCaseReviewEdits] = useState('');
-  const [diamondStandardTakeaway, setDiamondStandardTakeaway] = useState('');
 
   const [activeTab, setActiveTab] = useState(0);
   const [processing, setProcessing] = useState<number>(-1);
@@ -101,6 +100,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
       '';
 
     const hydratedMk3 = initialVaultItem.preceptorMk3Text || initialVaultItem.lensReviews?.[2] || '';
+    const hydratedDiamond = initialVaultItem.preceptorDiamondText || initialVaultItem.diamondStandardTakeaway || '';
 
     const hydratedDiff =
       initialVaultItem.tripleDifferencesExplainer ||
@@ -114,9 +114,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     setPreceptorPp2Text(hydratedPp2);
     setPreceptorSuperText(hydratedSuper);
     setPreceptorMk3Text(hydratedMk3);
+    setPreceptorDiamondText(hydratedDiamond);
     setDifferencesExplainer(hydratedDiff);
-    setPerfectCaseReviewEdits(initialVaultItem.perfectCaseReviewEdits || '');
-    setDiamondStandardTakeaway(initialVaultItem.diamondStandardTakeaway || '');
     setPatientFirstInitial((initialVaultItem.patient?.firstInitial || '').toUpperCase().slice(0, 1));
     setPatientLastName(initialVaultItem.patient?.lastName || '');
     setPatientFolderName(
@@ -124,7 +123,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
       defaultPatientFolder(initialVaultItem.patient?.lastName || '', initialVaultItem.patient?.firstInitial || ''),
     );
     setActiveTab(0);
-    setPhase(hydratedPp2 || hydratedSuper || hydratedMk3 ? 'review' : 'upload');
+    setPhase(hydratedPp2 || hydratedSuper || hydratedMk3 || hydratedDiamond ? 'review' : 'upload');
     setError('');
     setChatInstance(null);
     setChatMessages([]);
@@ -198,9 +197,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     pp2Text: string,
     superText: string,
     mk3Text: string,
+    diamondText: string,
     explainer: string,
-    edits: string,
-    takeaway: string,
     sourceText: string,
   ): VaultItem => ({
     id: `preceptor-${Date.now()}`,
@@ -222,21 +220,17 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
       'MK3',
       mk3Text,
       '',
+      'DIAMOND STANDARD CASE REVIEW',
+      diamondText,
+      '',
       'Differences',
       explainer,
-      '',
-      'Edits for Perfect Case Review',
-      edits,
-      '',
-      'Diamond Standard Takeaway',
-      takeaway,
     ].join('\n'),
     preceptorPp2Text: pp2Text,
     preceptorSuperText: superText,
     preceptorMk3Text: mk3Text,
+    preceptorDiamondText: diamondText,
     tripleDifferencesExplainer: explainer,
-    perfectCaseReviewEdits: edits,
-    diamondStandardTakeaway: takeaway,
     preceptorV1Text: pp2Text,
     preceptorV2Text: superText,
     differencesExplainer: explainer,
@@ -247,30 +241,26 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     pp2Input = preceptorPp2Text,
     superInput = preceptorSuperText,
     mk3Input = preceptorMk3Text,
-    explainerInput = differencesExplainer,
-    editsInput = perfectCaseReviewEdits,
-    takeawayInput = diamondStandardTakeaway,
+    diamondInput = preceptorDiamondText,
   ) => {
-    if (!pp2Input || !superInput || !mk3Input) {
-      setExportMessage('Bundle export requires PP2, SUPER, and MK3 notes.');
+    if (!pp2Input || !superInput || !mk3Input || !diamondInput) {
+      setExportMessage('Bundle export requires PP2, SUPER, MK3, and Diamond notes.');
       return;
     }
 
     const folderName = patientFolderName || defaultPatientFolder(patientLastName, patientFirstInitial);
-    const { doc, filename, pdfBytes } = generateZeliskoTripleBundlePdf({
+    const { filename, pdfBytes } = await generateZeliskoTripleBundlePdf({
       patientFirstInitial,
       patientLastName,
       date: new Date(),
-      tripleDifferencesExplainer: explainerInput,
-      perfectCaseReviewEdits: editsInput || 'Unknown / Not Documented',
       pp2: pp2Input,
       superNote: superInput,
       mk3: mk3Input,
-      diamondStandardTakeaway: takeawayInput || 'Unknown / Not Documented',
+      diamond: diamondInput,
       title: 'Dr. Zelisko — Triple Output Case Review Bundle',
     });
 
-    triggerBrowserDownload(doc, filename);
+    triggerBrowserDownload(pdfBytes, filename);
 
     if (autoSaveToFolder && supportsFS) {
       let handle = patientsParentHandle;
@@ -331,24 +321,18 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
       setPreceptorPp2Text(notes.pp2);
       setPreceptorSuperText(notes.super);
       setPreceptorMk3Text(notes.mk3);
+      setPreceptorDiamondText(notes.diamond);
 
       setProcessing(2);
       const explainer = await generateTripleDifferencesExplainer();
       setDifferencesExplainer(explainer);
 
       setProcessing(3);
-      const guidance = await generateDiamondStandardGuidance(notes.pp2, notes.super, notes.mk3);
-      setPerfectCaseReviewEdits(guidance.perfectCaseReviewEdits);
-      setDiamondStandardTakeaway(guidance.diamondStandardTakeaway);
-
-      setProcessing(4);
       await exportBundlePdf(
         notes.pp2,
         notes.super,
         notes.mk3,
-        explainer,
-        guidance.perfectCaseReviewEdits,
-        guidance.diamondStandardTakeaway,
+        notes.diamond,
       );
 
       const sourceText = typeof content === 'string' ? content : '';
@@ -357,9 +341,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
           notes.pp2,
           notes.super,
           notes.mk3,
+          notes.diamond,
           explainer,
-          guidance.perfectCaseReviewEdits,
-          guidance.diamondStandardTakeaway,
           sourceText,
         ),
       );
@@ -378,22 +361,21 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   };
 
   const startChat = () => {
-    if (!preceptorPp2Text || !preceptorSuperText || !preceptorMk3Text) return;
+    if (!preceptorPp2Text || !preceptorSuperText || !preceptorMk3Text || !preceptorDiamondText) return;
 
     if (!chatInstance) {
       const chat = startZeliskoPreceptorChat(
         preceptorPp2Text,
         preceptorSuperText,
         preceptorMk3Text,
+        preceptorDiamondText,
         differencesExplainer,
-        perfectCaseReviewEdits,
-        diamondStandardTakeaway,
       );
       setChatInstance(chat);
       setChatMessages([
         {
           role: 'assistant',
-          text: 'I can compare PP2, SUPER, and MK3, tighten chart language, and draft a best-of Diamond note. What should we refine first?',
+          text: 'I can compare PP2, SUPER, MK3, and Diamond, tighten chart language, and improve the Diamond note. What should we refine first?',
         },
       ]);
     }
@@ -434,9 +416,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     setPreceptorPp2Text('');
     setPreceptorSuperText('');
     setPreceptorMk3Text('');
+    setPreceptorDiamondText('');
     setDifferencesExplainer('');
-    setPerfectCaseReviewEdits('');
-    setDiamondStandardTakeaway('');
     setActiveTab(0);
     setError('');
     setChatMessages([]);
@@ -485,9 +466,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
 
   const processingStages = [
     'Preparing Input',
-    'Generating PP2 + SUPER + MK3',
+    'Generating PP2 + SUPER + MK3 + Diamond',
     'Generating Prompt Differences',
-    'Generating Front-Page Edits + Takeaway',
     'Bundle PDF Export',
   ];
 
@@ -495,13 +475,16 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     { label: 'PP2', icon: 'fa-stethoscope' },
     { label: 'SUPER', icon: 'fa-notes-medical' },
     { label: 'MK3', icon: 'fa-chart-line' },
+    { label: 'DIAMOND', icon: 'fa-gem' },
   ];
 
   const activeContent = activeTab === 1
     ? preceptorSuperText
     : activeTab === 2
       ? preceptorMk3Text
-      : preceptorPp2Text;
+      : activeTab === 3
+        ? preceptorDiamondText
+        : preceptorPp2Text;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -536,7 +519,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                 <i className="fa-solid fa-user-graduate text-2xl text-teal-700"></i>
               </div>
               <h2 className="text-xl font-black text-teal-950 uppercase tracking-tight">Generating Triple Bundle</h2>
-              <p className="text-xs text-teal-800/40 font-bold uppercase tracking-widest mt-1">PP2 + SUPER + MK3 + PDF</p>
+              <p className="text-xs text-teal-800/40 font-bold uppercase tracking-widest mt-1">PP2 + SUPER + MK3 + Diamond + PDF</p>
             </div>
 
             <div className="space-y-4">
@@ -586,7 +569,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-black text-teal-950 uppercase tracking-tight">Case Review Results</h2>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-teal-800/40 mt-1">Bundle-ready with PP2 + SUPER + MK3</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-teal-800/40 mt-1">Bundle-ready with PP2 + SUPER + MK3 + Diamond</p>
             </div>
             <div className="flex gap-2">
               <button
@@ -602,7 +585,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
               </button>
               <button
                 onClick={() => exportBundlePdf()}
-                disabled={!preceptorPp2Text || !preceptorSuperText || !preceptorMk3Text}
+                disabled={!preceptorPp2Text || !preceptorSuperText || !preceptorMk3Text || !preceptorDiamondText}
                 className="px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest bg-indigo-600 text-white hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <i className="fa-solid fa-file-pdf"></i>
@@ -667,22 +650,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
 
             {differencesExplainer && (
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-1">How PP2, SUPER, and MK3 differ</p>
+                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-1">How PP2, SUPER, MK3, and Diamond differ</p>
                 <div className="text-xs text-indigo-900/80 leading-relaxed">{renderMarkdown(differencesExplainer)}</div>
-              </div>
-            )}
-
-            {perfectCaseReviewEdits && (
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 mb-1">Front Page Edits for a Perfect Case Review</p>
-                <div className="text-xs text-amber-900/80 leading-relaxed">{renderMarkdown(perfectCaseReviewEdits)}</div>
-              </div>
-            )}
-
-            {diamondStandardTakeaway && (
-              <div className="bg-cyan-50 border border-cyan-100 rounded-xl p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-cyan-700 mb-1">Diamond Standard Note4 Takeaway</p>
-                <div className="text-xs text-cyan-900/80 leading-relaxed">{renderMarkdown(diamondStandardTakeaway)}</div>
               </div>
             )}
 
@@ -765,7 +734,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Compare PP2/SUPER/MK3, tighten language, or draft a Diamond merge..."
+                        placeholder="Compare PP2/SUPER/MK3/Diamond, tighten language, or improve the Diamond note..."
                         className="flex-1 px-4 py-3 rounded-xl border border-teal-100 bg-white text-sm focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none resize-none"
                         rows={2}
                       />
@@ -779,8 +748,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                     </div>
                     <div className="flex gap-1.5 mt-2 flex-wrap">
                       {[
-                        'Compare PP2 vs SUPER vs MK3 by section',
-                        'Draft Diamond Standard Note4 from best elements',
+                        'Compare PP2 vs SUPER vs MK3 vs Diamond by section',
+                        'Improve Diamond Standard Case Review for chart-readiness',
                       ].map((q, i) => (
                         <button
                           key={i}
@@ -808,7 +777,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
               <i className="fa-solid fa-user-graduate text-2xl text-teal-700"></i>
             </div>
             <h2 className="text-2xl font-black text-teal-950 uppercase tracking-tight">Preceptor</h2>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-teal-800/40 mt-1">Triple Output + Auto Save</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-teal-800/40 mt-1">Four Outputs + Auto Save</p>
           </div>
 
           <div className="bg-white/80 backdrop-blur-xl rounded-[2.5rem] shadow-2xl border border-teal-50 p-8 space-y-6">
@@ -942,7 +911,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
             )}
 
             <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
-              <p className="text-[9px] font-black uppercase tracking-widest text-teal-800/40 mb-3">Triple Outputs</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-teal-800/40 mb-3">Four Outputs</p>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center">
                   <i className="fa-solid fa-stethoscope text-xs"></i>
@@ -970,6 +939,15 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                   <p className="text-[9px] text-slate-400">9-section Snapshot/Safety Window structure.</p>
                 </div>
               </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
+                  <i className="fa-solid fa-gem text-xs"></i>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-teal-900">DIAMOND STANDARD CASE REVIEW</p>
+                  <p className="text-[9px] text-slate-400">Integrated best-of note with executive summary and decision logic.</p>
+                </div>
+              </div>
             </div>
 
             <button
@@ -982,7 +960,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
               }`}
             >
               <i className="fa-solid fa-paper-plane"></i>
-              Send (Generate PP2 + SUPER + MK3)
+              Send (Generate PP2 + SUPER + MK3 + Diamond)
             </button>
           </div>
         </div>

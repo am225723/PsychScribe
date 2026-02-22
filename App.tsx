@@ -402,6 +402,7 @@ const App: React.FC = () => {
       item.preceptorPp2Text ||
       item.preceptorSuperText ||
       item.preceptorMk3Text ||
+      item.preceptorDiamondText ||
       item.preceptorV1Text ||
       item.preceptorV2Text
     ) {

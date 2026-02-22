@@ -1,6 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  generateDiamondStandardGuidance,
   generateTripleDifferencesExplainer,
   generateZeliskoTripleOutputNotes,
 } from '../services/geminiService';
@@ -34,6 +33,7 @@ type BatchRow = {
   pp2Progress: number;
   superProgress: number;
   mk3Progress: number;
+  diamondProgress: number;
   pdfProgress: number;
   savedPath?: string;
   error?: string;
@@ -113,6 +113,7 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
         pp2Progress: 0,
         superProgress: 0,
         mk3Progress: 0,
+        diamondProgress: 0,
         pdfProgress: 0,
       };
     });
@@ -165,36 +166,32 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           pp2Progress: 0,
           superProgress: 0,
           mk3Progress: 0,
+          diamondProgress: 0,
           pdfProgress: 0,
         });
 
         const part = await toBase64Part(row.file);
 
-        updateRow(row.id, { progress: 20, message: 'Generating PP2 + SUPER + MK3...', pp2Progress: 20, superProgress: 20, mk3Progress: 20 });
+        updateRow(row.id, { progress: 20, message: 'Generating PP2 + SUPER + MK3 + Diamond...', pp2Progress: 20, superProgress: 20, mk3Progress: 20, diamondProgress: 20 });
         const notes = await generateZeliskoTripleOutputNotes([part]);
-        updateRow(row.id, { progress: 50, pp2Progress: 100, superProgress: 100, mk3Progress: 100 });
+        updateRow(row.id, { progress: 50, pp2Progress: 100, superProgress: 100, mk3Progress: 100, diamondProgress: 100 });
 
         updateRow(row.id, { progress: 60, message: 'Generating differences explainer...' });
         const differencesExplainer = await generateTripleDifferencesExplainer();
 
-        updateRow(row.id, { progress: 70, message: 'Generating front-page edits + takeaway...' });
-        const guidance = await generateDiamondStandardGuidance(notes.pp2, notes.super, notes.mk3);
-
-        updateRow(row.id, { progress: 75, message: 'Creating bundle PDF...', pdfProgress: 35 });
-        const { doc, filename, pdfBytes } = generateZeliskoTripleBundlePdf({
+        updateRow(row.id, { progress: 70, message: 'Creating bundle PDF...', pdfProgress: 35 });
+        const { filename, pdfBytes } = await generateZeliskoTripleBundlePdf({
           patientFirstInitial: row.firstInitial,
           patientLastName: row.lastName,
           date: new Date(),
-          tripleDifferencesExplainer: differencesExplainer,
-          perfectCaseReviewEdits: guidance.perfectCaseReviewEdits,
           pp2: notes.pp2,
           superNote: notes.super,
           mk3: notes.mk3,
-          diamondStandardTakeaway: guidance.diamondStandardTakeaway,
+          diamond: notes.diamond,
         });
 
         if (downloadPdfs) {
-          triggerBrowserDownload(doc, filename);
+          triggerBrowserDownload(pdfBytes, filename);
         }
         updateRow(row.id, { progress: 85, pdfProgress: 70 });
 
@@ -243,21 +240,17 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
             'MK3',
             notes.mk3,
             '',
+            'DIAMOND STANDARD CASE REVIEW',
+            notes.diamond,
+            '',
             'Differences',
             differencesExplainer,
-            '',
-            'Edits for Perfect Case Review',
-            guidance.perfectCaseReviewEdits,
-            '',
-            'Diamond Standard Takeaway',
-            guidance.diamondStandardTakeaway,
           ].join('\n'),
           preceptorPp2Text: notes.pp2,
           preceptorSuperText: notes.super,
           preceptorMk3Text: notes.mk3,
+          preceptorDiamondText: notes.diamond,
           tripleDifferencesExplainer: differencesExplainer,
-          diamondStandardTakeaway: guidance.diamondStandardTakeaway,
-          perfectCaseReviewEdits: guidance.perfectCaseReviewEdits,
           preceptorV1Text: notes.pp2,
           preceptorV2Text: notes.super,
           differencesExplainer,
@@ -432,7 +425,7 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
                           style={{ width: `${row.progress}%` }}
                         />
                       </div>
-                      <div className="grid grid-cols-4 gap-2 text-[10px]">
+                      <div className="grid grid-cols-5 gap-2 text-[10px]">
                         <div>
                           <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">pp2</div>
                           <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
@@ -449,6 +442,12 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
                           <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">mk3</div>
                           <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
                             <div className="h-full bg-cyan-500" style={{ width: `${row.mk3Progress}%` }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">diamond</div>
+                          <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
+                            <div className="h-full bg-amber-500" style={{ width: `${row.diamondProgress}%` }} />
                           </div>
                         </div>
                         <div>

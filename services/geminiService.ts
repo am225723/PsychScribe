@@ -211,41 +211,27 @@ function cleanGeneratedText(text: string): string {
 
 const ZELISKO_TRIPLE_OUTPUT_SYSTEM_PROMPT = ZELISKO_TRIPLE_OUTPUT_PROMPT_VERBATIM;
 
-const OUTPUT_1_DELIMITER = '========== OUTPUT 1/3: PSYCH PRECEPTOR 2.0 ==========';
-const OUTPUT_2_DELIMITER = '========== OUTPUT 2/3: SUPER ==========';
-const OUTPUT_3_DELIMITER = '========== OUTPUT 3/3: MK3 ==========';
+const OUTPUT_1_DELIMITER = '========== OUTPUT 1/4: PSYCH PRECEPTOR 2.0 ==========';
+const OUTPUT_2_DELIMITER = '========== OUTPUT 2/4: SUPER ==========';
+const OUTPUT_3_DELIMITER = '========== OUTPUT 3/4: MK3 ==========';
+const OUTPUT_4_DELIMITER = '========== OUTPUT 4/4: DIAMOND STANDARD CASE REVIEW ==========';
+const LEGACY_OUTPUT_1_DELIMITER = '========== OUTPUT 1/3: PSYCH PRECEPTOR 2.0 ==========';
+const LEGACY_OUTPUT_2_DELIMITER = '========== OUTPUT 2/3: SUPER ==========';
+const LEGACY_OUTPUT_3_DELIMITER = '========== OUTPUT 3/3: MK3 ==========';
 
-const TRIPLE_DIFFERENCES_INSTRUCTION = `Explain conceptually how Psych Preceptor 2.0, SUPER, and MK3 differ.
+const TRIPLE_DIFFERENCES_INSTRUCTION = `Explain conceptually how Psych Preceptor 2.0, SUPER, MK3, and Diamond Standard differ.
 Rules:
 - Use short bullet points.
 - Keep conceptual and teaching-focused.
 - Do not mention patient-specific details.
 - Do not mention missing data.`;
 
-const DIAMOND_GUIDANCE_INSTRUCTION = `You are creating two bundle pages from three psychiatric preceptor notes.
-Return exactly in this format:
-===== FRONT PAGE EDITS =====
-- bullet list of edits needed to produce a Diamond Standard case review
-
-===== FINAL TAKEAWAY =====
-- bullet list titled guidance for synthesis
-
-Rules:
-- Use concise bullets only.
-- No fabricated patient facts.
-- If a detail is absent, say "Unknown / Not Documented" as needed.
-- Keep it practical for charting and supervision.`;
-
 export interface ZeliskoTripleNotes {
   pp2: string;
   super: string;
   mk3: string;
+  diamond: string;
   raw: string;
-}
-
-export interface DiamondStandardGuidance {
-  perfectCaseReviewEdits: string;
-  diamondStandardTakeaway: string;
 }
 
 function buildPreceptorParts(
@@ -275,30 +261,66 @@ function findAllIndices(haystack: string, needle: string): number[] {
   return positions;
 }
 
-function parseTripleByDelimiters(text: string): Omit<ZeliskoTripleNotes, 'raw'> | null {
-  const idx3 = text.lastIndexOf(OUTPUT_3_DELIMITER);
-  if (idx3 < 0) return null;
-  const idx2 = text.lastIndexOf(OUTPUT_2_DELIMITER, idx3 - 1);
-  if (idx2 < 0) return null;
-  const idx1 = text.lastIndexOf(OUTPUT_1_DELIMITER, idx2 - 1);
-  if (idx1 < 0) return null;
+function parseByFourDelimiters(
+  text: string,
+  marker1: string,
+  marker2: string,
+  marker3: string,
+  marker4: string,
+): Omit<ZeliskoTripleNotes, 'raw'> | null {
+  const i1 = text.indexOf(marker1);
+  const i2 = text.indexOf(marker2);
+  const i3 = text.indexOf(marker3);
+  const i4 = text.indexOf(marker4);
+  if (i1 < 0 || i2 < 0 || i3 < 0 || i4 < 0) return null;
 
-  const pp2 = text.slice(idx1 + OUTPUT_1_DELIMITER.length, idx2).trim();
-  const superText = text.slice(idx2 + OUTPUT_2_DELIMITER.length, idx3).trim();
-  const mk3 = text.slice(idx3 + OUTPUT_3_DELIMITER.length).trim();
+  const pp2 = text.slice(i1 + marker1.length, i2).trim();
+  const superText = text.slice(i2 + marker2.length, i3).trim();
+  const mk3 = text.slice(i3 + marker3.length, i4).trim();
+  const diamond = text.slice(i4 + marker4.length).trim();
+  if (!pp2 || !superText || !mk3 || !diamond) return null;
 
-  if (!pp2 || !superText || !mk3) {
-    return null;
+  return { pp2, super: superText, mk3, diamond };
+}
+
+function parseByThreeDelimiters(
+  text: string,
+  marker1: string,
+  marker2: string,
+  marker3: string,
+): Omit<ZeliskoTripleNotes, 'raw'> | null {
+  const i1 = text.indexOf(marker1);
+  const i2 = text.indexOf(marker2);
+  const i3 = text.indexOf(marker3);
+  if (i1 < 0 || i2 < 0 || i3 < 0) return null;
+
+  const pp2 = text.slice(i1 + marker1.length, i2).trim();
+  const superText = text.slice(i2 + marker2.length, i3).trim();
+  const afterMk3 = text.slice(i3 + marker3.length).trim();
+  const diamondIdx = afterMk3.indexOf(OUTPUT_4_DELIMITER);
+
+  if (!pp2 || !superText || !afterMk3) return null;
+
+  if (diamondIdx >= 0) {
+    const mk3 = afterMk3.slice(0, diamondIdx).trim();
+    const diamond = afterMk3.slice(diamondIdx + OUTPUT_4_DELIMITER.length).trim();
+    return {
+      pp2,
+      super: superText,
+      mk3,
+      diamond,
+    };
   }
 
   return {
     pp2,
     super: superText,
-    mk3,
+    mk3: afterMk3,
+    diamond: '',
   };
 }
 
-function parseTripleFallback(text: string): Omit<ZeliskoTripleNotes, 'raw'> | null {
+function parseQuadFallback(text: string): Omit<ZeliskoTripleNotes, 'raw'> | null {
   const toAnchor = 'To: Alicia Rodriguez, APRN Student';
   const toIndices = findAllIndices(text, toAnchor);
   if (toIndices.length < 2) {
@@ -313,6 +335,11 @@ function parseTripleFallback(text: string): Omit<ZeliskoTripleNotes, 'raw'> | nu
     return null;
   }
 
+  const diamondMarker = 'Re: Diamond Standard Case Review:';
+  let diamondStart = text.indexOf('\nHeader\nTo: Alicia Rodriguez, APRN Student', mk3Start + 1);
+  if (diamondStart < 0) diamondStart = text.indexOf(diamondMarker, mk3Start + 1);
+  if (diamondStart < 0 && toIndices.length >= 4) diamondStart = toIndices[3];
+
   const beforeMk3 = text.slice(0, mk3Start);
   const toBefore = findAllIndices(beforeMk3, toAnchor);
   if (toBefore.length < 2) {
@@ -324,7 +351,8 @@ function parseTripleFallback(text: string): Omit<ZeliskoTripleNotes, 'raw'> | nu
 
   const pp2 = beforeMk3.slice(pp2Start, superStart).trim();
   const superText = beforeMk3.slice(superStart).trim();
-  const mk3 = text.slice(mk3Start).trim();
+  const mk3 = diamondStart > mk3Start ? text.slice(mk3Start, diamondStart).trim() : text.slice(mk3Start).trim();
+  const diamond = diamondStart > mk3Start ? text.slice(diamondStart).trim() : '';
 
   if (!pp2 || !superText || !mk3) {
     return null;
@@ -334,46 +362,36 @@ function parseTripleFallback(text: string): Omit<ZeliskoTripleNotes, 'raw'> | nu
     pp2,
     super: superText,
     mk3,
+    diamond,
   };
 }
 
 function parseZeliskoTripleOutput(rawText: string): ZeliskoTripleNotes {
   const cleaned = cleanGeneratedText(rawText);
-  const parsed = parseTripleByDelimiters(cleaned) || parseTripleFallback(cleaned);
-  if (!parsed) {
-    throw new Error('Unable to parse triple preceptor output into Psych Preceptor 2.0, SUPER, and MK3 sections.');
-  }
+  const parsed = parseByFourDelimiters(
+    cleaned,
+    OUTPUT_1_DELIMITER,
+    OUTPUT_2_DELIMITER,
+    OUTPUT_3_DELIMITER,
+    OUTPUT_4_DELIMITER,
+  ) || parseByThreeDelimiters(
+    cleaned,
+    LEGACY_OUTPUT_1_DELIMITER,
+    LEGACY_OUTPUT_2_DELIMITER,
+    LEGACY_OUTPUT_3_DELIMITER,
+  ) || parseQuadFallback(cleaned);
 
   return {
-    ...parsed,
+    ...((parsed && {
+      ...parsed,
+      diamond: parsed.diamond || parsed.mk3 || '',
+    }) || {
+      pp2: cleaned,
+      super: '',
+      mk3: '',
+      diamond: cleaned,
+    }),
     raw: cleaned,
-  };
-}
-
-function parseDiamondGuidance(text: string): DiamondStandardGuidance {
-  const cleaned = cleanGeneratedText(text);
-  const editsDelim = '===== FRONT PAGE EDITS =====';
-  const takeawayDelim = '===== FINAL TAKEAWAY =====';
-  const editsIdx = cleaned.indexOf(editsDelim);
-  const takeawayIdx = cleaned.indexOf(takeawayDelim);
-
-  if (editsIdx >= 0 && takeawayIdx > editsIdx) {
-    const perfectCaseReviewEdits = cleaned
-      .slice(editsIdx + editsDelim.length, takeawayIdx)
-      .trim();
-    const diamondStandardTakeaway = cleaned
-      .slice(takeawayIdx + takeawayDelim.length)
-      .trim();
-
-    return {
-      perfectCaseReviewEdits: perfectCaseReviewEdits || 'Unknown / Not Documented',
-      diamondStandardTakeaway: diamondStandardTakeaway || 'Unknown / Not Documented',
-    };
-  }
-
-  return {
-    perfectCaseReviewEdits: cleaned || 'Unknown / Not Documented',
-    diamondStandardTakeaway: cleaned || 'Unknown / Not Documented',
   };
 }
 
@@ -381,7 +399,7 @@ export async function generateZeliskoTripleOutputNotes(
   content: string | { mimeType: string; data: string }[],
 ): Promise<ZeliskoTripleNotes> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const parts = buildPreceptorParts(content, 'Generate all three preceptor case reviews now.');
+  const parts = buildPreceptorParts(content, 'Generate all four preceptor case reviews now.');
 
   const response = await withRetry(async () => {
     return ai.models.generateContent({
@@ -395,7 +413,7 @@ export async function generateZeliskoTripleOutputNotes(
   });
 
   if (!response?.text) {
-    throw new Error('Triple preceptor generation failed.');
+    throw new Error('Preceptor generation failed.');
   }
 
   return parseZeliskoTripleOutput(response.text);
@@ -408,7 +426,7 @@ export async function generateTripleDifferencesExplainer(): Promise<string> {
     return ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: {
-        parts: [{ text: 'Create a short conceptual differences explainer for Psych Preceptor 2.0 vs SUPER vs MK3.' }],
+        parts: [{ text: 'Create a short conceptual differences explainer for Psych Preceptor 2.0 vs SUPER vs MK3 vs Diamond.' }],
       },
       config: {
         systemInstruction: TRIPLE_DIFFERENCES_INSTRUCTION,
@@ -424,51 +442,19 @@ export async function generateTripleDifferencesExplainer(): Promise<string> {
   return cleanGeneratedText(response.text);
 }
 
-export async function generateDiamondStandardGuidance(
-  pp2Text: string,
-  superText: string,
-  mk3Text: string,
-): Promise<DiamondStandardGuidance> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  const response = await withRetry(async () => {
-    return ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: {
-        parts: [
-          {
-            text: `Psych Preceptor 2.0:\n${pp2Text}\n\nSUPER:\n${superText}\n\nMK3:\n${mk3Text}`,
-          },
-        ],
-      },
-      config: {
-        systemInstruction: DIAMOND_GUIDANCE_INSTRUCTION,
-        temperature: 0.2,
-      },
-    });
-  });
-
-  if (!response?.text) {
-    throw new Error('Diamond guidance generation failed.');
-  }
-
-  return parseDiamondGuidance(response.text);
-}
-
 export function startZeliskoPreceptorChat(
   pp2Text: string,
   superText: string,
   mk3Text: string,
+  diamondText = '',
   differencesExplainer = '',
-  perfectCaseReviewEdits = '',
-  diamondStandardTakeaway = '',
 ): Chat {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   return ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: {
-      systemInstruction: `You are a senior psychiatric preceptor AI assistant helping Dr. Zelisko refine triple-output notes (Psych Preceptor 2.0, SUPER, MK3).
+      systemInstruction: `You are a senior psychiatric preceptor AI assistant helping Dr. Zelisko refine four-output notes (Psych Preceptor 2.0, SUPER, MK3, Diamond).
 
 You have access to:
 --- Psych Preceptor 2.0 ---
@@ -480,20 +466,17 @@ ${superText}
 --- MK3 ---
 ${mk3Text}
 
+--- Diamond Standard Case Review ---
+${diamondText || 'Not provided.'}
+
 --- Differences Explainer ---
 ${differencesExplainer || 'Not provided.'}
 
---- Front-Page Perfect Case Review Edits ---
-${perfectCaseReviewEdits || 'Not provided.'}
-
---- Diamond Standard Takeaway ---
-${diamondStandardTakeaway || 'Not provided.'}
-
 Your role is to:
-1. Compare PP2, SUPER, and MK3 by section and identify tradeoffs.
+1. Compare PP2, SUPER, MK3, and Diamond by section and identify tradeoffs.
 2. Tighten language for chart-readiness and teaching clarity.
 3. Rewrite specific sections on request.
-4. Draft a best-of merge while preserving source-grounded accuracy.
+4. Draft an improved Diamond note while preserving source-grounded accuracy.
 5. Do not invent patient facts.
 
 TONE: Collaborative, intelligent, and efficient.`,

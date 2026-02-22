@@ -2,7 +2,6 @@ import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { FileData } from '../types';
 import {
   analyzeIntake,
-  generateDiamondStandardGuidance,
   generateTripleDifferencesExplainer,
   generateZeliskoTripleOutputNotes,
 } from '../services/geminiService';
@@ -338,7 +337,6 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
       const differences = await generateTripleDifferencesExplainer();
 
       updateStep(job.jobId, 'preceptor', { progress: 80 });
-      const guidance = await generateDiamondStandardGuidance(notes.pp2, notes.super, notes.mk3);
 
       return [
         '## Psych Preceptor 2.0',
@@ -350,14 +348,11 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
         '## MK3',
         notes.mk3,
         '',
-        '## Differences Between PP2, SUPER, and MK3',
+        '## DIAMOND STANDARD CASE REVIEW',
+        notes.diamond,
+        '',
+        '## Differences Between PP2, SUPER, MK3, and Diamond',
         differences,
-        '',
-        '## Front Page Edits To Reach A Perfect Case Review',
-        guidance.perfectCaseReviewEdits,
-        '',
-        '## What to take from each prompt to make the Diamond Standard Note4',
-        guidance.diamondStandardTakeaway,
       ].join('\n');
     }
 

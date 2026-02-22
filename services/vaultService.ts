@@ -17,6 +17,7 @@ export type VaultItem = {
   preceptorPp2Text?: string;
   preceptorSuperText?: string;
   preceptorMk3Text?: string;
+  preceptorDiamondText?: string;
   tripleDifferencesExplainer?: string;
   diamondStandardTakeaway?: string;
   preceptorV1Text?: string;
@@ -82,6 +83,12 @@ function migrateItem(input: any): VaultItem {
     ? input.preceptorMk3Text
     : lensReviews?.[2];
 
+  const preceptorDiamondText = typeof input?.preceptorDiamondText === 'string'
+    ? input.preceptorDiamondText
+    : typeof input?.diamondStandardTakeaway === 'string'
+      ? input.diamondStandardTakeaway
+      : lensReviews?.[3];
+
   const tripleDifferencesExplainer = typeof input?.tripleDifferencesExplainer === 'string'
     ? input.tripleDifferencesExplainer
     : typeof input?.differencesExplainer === 'string'
@@ -111,7 +118,7 @@ function migrateItem(input: any): VaultItem {
     ? input.perfectCaseReviewEdits
     : undefined;
 
-  const fallbackPreceptorText = [preceptorPp2Text, preceptorSuperText, preceptorMk3Text, preceptorV1Text, preceptorV2Text]
+  const fallbackPreceptorText = [preceptorPp2Text, preceptorSuperText, preceptorMk3Text, preceptorDiamondText, preceptorV1Text, preceptorV2Text]
     .filter(Boolean)
     .join('\n\n');
   const generatedText = typeof input?.generatedText === 'string'
@@ -139,6 +146,7 @@ function migrateItem(input: any): VaultItem {
     preceptorPp2Text,
     preceptorSuperText,
     preceptorMk3Text,
+    preceptorDiamondText,
     tripleDifferencesExplainer,
     diamondStandardTakeaway,
     preceptorV1Text,
