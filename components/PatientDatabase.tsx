@@ -184,14 +184,26 @@ export const PatientDatabase: React.FC = () => {
         return;
       }
 
-      const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
-      const firstNameIdx = header.findIndex(h => h === 'first_name' || h === 'first name' || h === 'firstname');
-      const lastNameIdx = header.findIndex(h => h === 'last_name' || h === 'last name' || h === 'lastname');
+      const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/["\ufeff]/g, ''));
+      let firstNameIdx = header.findIndex(h => h === 'first_name' || h === 'first name' || h === 'firstname');
+      let lastNameIdx = header.findIndex(h => h === 'last_name' || h === 'last name' || h === 'lastname');
       const fullNameIdx = header.findIndex(h => h.includes('name') || h === 'full_name' || h === 'patient');
-      const idIdx = header.findIndex(h => h.includes('client') || h.includes('id') || h === 'client_id');
+      const idIdx = header.findIndex(h => h.includes('client') || h === 'client_id');
       const dobIdx = header.findIndex(h => h.includes('dob') || h.includes('birth') || h.includes('date_of_birth'));
       const emailIdx = header.findIndex(h => h.includes('email'));
       const phoneIdx = header.findIndex(h => h.includes('phone') || h.includes('mobile') || h.includes('cell'));
+
+      if (firstNameIdx === -1 && lastNameIdx === -1 && fullNameIdx !== -1) {
+        const firstDataRow = lines[1]?.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        if (firstDataRow && firstDataRow.length > fullNameIdx + 1) {
+          const nextHeader = header[fullNameIdx + 1] || '';
+          const nextValue = firstDataRow[fullNameIdx + 1] || '';
+          if ((nextHeader === '' || nextHeader === 'last name' || nextHeader === 'last_name' || nextHeader === 'lastname') && nextValue && !nextValue.includes('@') && !nextValue.includes('/') && !nextValue.match(/^\(\d/)) {
+            firstNameIdx = fullNameIdx;
+            lastNameIdx = fullNameIdx + 1;
+          }
+        }
+      }
 
       const hasFirstLast = firstNameIdx !== -1 && lastNameIdx !== -1;
       if (!hasFirstLast && fullNameIdx === -1) {

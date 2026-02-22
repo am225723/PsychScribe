@@ -119,18 +119,6 @@ const App: React.FC = () => {
   const [tokenClient, setTokenClient] = useState<any>(null);
 
   useEffect(() => {
-    let handled = false;
-
-    const resolve = (state: AuthState, sess?: any) => {
-      if (sess !== undefined) setSession(sess);
-      if (!handled) {
-        handled = true;
-        setAuthState(state);
-      } else {
-        setAuthState(state);
-      }
-    };
-
     const MFA_EXPIRY_MS = 60 * 60 * 1000;
 
     const isMfaExpired = (): boolean => {
@@ -142,7 +130,11 @@ const App: React.FC = () => {
 
     const checkMfa = async (): Promise<AuthState> => {
       try {
-        const { data: factors } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
+        const factorsResult = await Promise.race([
+          supabase.auth.mfa.listFactors(),
+          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 4000)),
+        ]);
+        const factors = (factorsResult as any)?.data;
         const hasVerifiedTotp = factors?.totp?.some((f: any) => f.status === 'verified');
 
         if (!hasVerifiedTotp) {
@@ -153,17 +145,33 @@ const App: React.FC = () => {
           return 'mfa_challenge';
         }
 
-        const result = await Promise.race([
+        const aalResult = await Promise.race([
           supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 4000)),
         ]);
-        const aal = (result as any)?.data;
+        const aal = (aalResult as any)?.data;
         if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
           return 'mfa_challenge';
         }
-        return 'authenticated';
+        if (aal?.currentLevel === 'aal2') {
+          return 'authenticated';
+        }
+        return 'mfa_challenge';
       } catch {
         return 'mfa_challenge';
+      }
+    };
+
+    let initDone = false;
+
+    const resolveAuth = async (newSession: any) => {
+      if (newSession) {
+        setSession(newSession);
+        const mfaState = await checkMfa();
+        setAuthState(mfaState);
+      } else {
+        setSession(null);
+        setAuthState('unauthenticated');
       }
     };
 
@@ -171,32 +179,22 @@ const App: React.FC = () => {
       try {
         const sessionResult = await Promise.race([
           supabase.auth.getSession(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+          new Promise<{ data: { session: null } }>((resolve) => setTimeout(() => resolve({ data: { session: null } }), 5000)),
         ]);
         const currentSession = (sessionResult as any)?.data?.session;
-        if (!currentSession) {
-          resolve('unauthenticated');
-          return;
-        }
-        setSession(currentSession);
-        const mfaState = await checkMfa();
-        resolve(mfaState);
+        initDone = true;
+        await resolveAuth(currentSession);
       } catch {
-        resolve('unauthenticated');
+        initDone = true;
+        setAuthState('unauthenticated');
       }
     };
     init();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      if (!newSession) {
-        resolve('unauthenticated', null);
-        return;
-      }
-      setSession(newSession);
-      if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED' || _event === 'INITIAL_SESSION') {
-        const mfaState = await checkMfa();
-        resolve(mfaState);
-      }
+      if (_event === 'INITIAL_SESSION') return;
+      if (!initDone && _event === 'TOKEN_REFRESHED') return;
+      await resolveAuth(newSession);
     });
 
     return () => {
