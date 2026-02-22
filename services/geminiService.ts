@@ -205,6 +205,53 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1500): Pr
 
 export type DocumentType = 'summary' | 'treatment' | 'darp';
 
+const REQUIRED_HEADINGS = [
+  '### 1) Case Summary (The Snapshot)',
+  '### 2) Risk & Safety Window',
+  '### 3) Diagnostic Formulation & Differential',
+  '### 4) Medication & Treatment Critique',
+  '### 5) Corrected Plan',
+  '### 6) Clinical Toolkit (Scripts you can actually say)',
+  '### 7) Documentation Strategy',
+  '### 8) Teaching Pearl',
+  '### 9) Next Visit Agenda (2-4 Week "If this, then that")',
+] as const;
+
+const SUPER_PRECEPTOR_SKELETON = `You are the Super Preceptor for psychiatric case review teaching documents.
+Rules:
+- Use only documented case facts. Do not invent patient details.
+- Keep language chart-ready, clinically actionable, and educational for trainees.
+- If data is missing, explicitly label it as "Unknown / Not Documented" or "Needed data point."
+
+Internal content guidance:
+- Include chart-ready lines a clinician can paste directly into documentation.
+- Include spoken lines the trainee can say in visit ("scripts you can actually say").
+- Include a vulnerability checklist that identifies dangerous assumptions and missing data.
+- Distinguish what must happen today vs what can wait for follow-up.
+
+Required output format (non-negotiable):
+### 1) Case Summary (The Snapshot)
+### 2) Risk & Safety Window
+### 3) Diagnostic Formulation & Differential
+### 4) Medication & Treatment Critique
+### 5) Corrected Plan
+### 6) Clinical Toolkit (Scripts you can actually say)
+### 7) Documentation Strategy
+### 8) Teaching Pearl
+### 9) Next Visit Agenda (2-4 Week "If this, then that")
+
+Section guidance:
+- Use concise bullets where possible.
+- Keep each section clinically useful and teachable.
+- Never leave critical safety reasoning implicit.`;
+
+const PRECEPTOR_FORMAT_ENFORCEMENT = `FORMAT ENFORCEMENT (NON-NEGOTIABLE):
+- Output MUST contain all 9 sections using the exact headings and order listed below.
+- Do NOT add other numbered sections.
+- If content is missing, write best-effort teaching content and label missing patient specifics as "Unknown / Not Documented" or "Needed data point". Do NOT invent patient facts.
+
+${REQUIRED_HEADINGS.join('\n')}`;
+
 export const PRECEPTOR_LENS_NAMES = [
   'Clinical Excellence',
   'Documentation & Compliance',
@@ -259,6 +306,100 @@ Rules:
 - Include concrete examples (e.g., clinical lens strongest at differential + physiology; compliance lens strongest at defensible language; integrative lens strongest at biopsychosocial + lifestyle targets).
 - Do not mention missing data and do not hallucinate patient details.`;
 
+function cleanGeneratedText(text: string): string {
+  return text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+}
+
+function missingHeadings(text: string): string[] {
+  return REQUIRED_HEADINGS.filter(h => !text.includes(h));
+}
+
+function headingContractErrors(text: string): string[] {
+  const errors: string[] = [];
+  const numberedSectionLines = (text.match(/^###\s+\d+\)\s+.*$/gm) ?? []).map((line) => line.trim());
+  let previousIndex = -1;
+
+  for (const heading of REQUIRED_HEADINGS) {
+    const matchingIndexes: number[] = [];
+    numberedSectionLines.forEach((line, index) => {
+      if (line === heading) {
+        matchingIndexes.push(index);
+      }
+    });
+
+    if (matchingIndexes.length > 1) {
+      errors.push(`Duplicate heading: ${heading}`);
+    }
+
+    if (matchingIndexes.length > 0) {
+      const firstIndex = matchingIndexes[0];
+      if (firstIndex < previousIndex) {
+        errors.push(`Out of order heading: ${heading}`);
+      }
+      previousIndex = firstIndex;
+    }
+  }
+
+  const allowedHeadings = new Set<string>(REQUIRED_HEADINGS);
+  for (const line of numberedSectionLines) {
+    if (!allowedHeadings.has(line)) {
+      errors.push(`Unexpected numbered section heading: ${line}`);
+    }
+  }
+
+  return errors;
+}
+
+function buildPreceptorSystemInstruction(baseInstruction: string): string {
+  return [
+    SUPER_PRECEPTOR_SKELETON,
+    baseInstruction,
+    PRECEPTOR_FORMAT_ENFORCEMENT,
+  ].join('\n\n');
+}
+
+async function repairMissingSectionsIfNeeded(text: string, context: string): Promise<string> {
+  const missing = missingHeadings(text);
+  if (missing.length === 0) return text;
+
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const repairSystem = `
+${SUPER_PRECEPTOR_SKELETON}
+
+REPAIR TASK:
+The draft below is missing one or more required sections.
+
+RULES:
+- Preserve all existing content exactly as written; do NOT rewrite or delete it.
+- Insert ONLY the missing sections, using the exact headings.
+- Insert them in the correct location so that the final output has all 9 sections in correct order.
+- Do NOT invent patient facts; use "Unknown / Not Documented" or "Needed data point" where needed.
+- Output the FULL corrected memo (not just the missing parts).
+
+Missing headings:
+${missing.map(m => "- " + m).join("\n")}
+`.trim();
+
+  const resp = await withRetry(async () => {
+    return ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: {
+        parts: [
+          { text: context },
+          { text: `DRAFT (repair this):\n\n${text}` },
+        ],
+      },
+      config: {
+        systemInstruction: repairSystem,
+        temperature: 0.2,
+      },
+    });
+  });
+
+  if (!resp?.text) return text;
+  return cleanGeneratedText(resp.text);
+}
+
 export async function preceptorAnalyze(content: string | { mimeType: string, data: string }[], perspectiveIndex: number): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const perspective = PRECEPTOR_PERSPECTIVES[perspectiveIndex] ?? PRECEPTOR_PERSPECTIVES[0];
@@ -276,7 +417,7 @@ export async function preceptorAnalyze(content: string | { mimeType: string, dat
       model: 'gemini-3-pro-preview',
       contents: { parts },
       config: {
-        systemInstruction: perspective.instruction,
+        systemInstruction: buildPreceptorSystemInstruction(perspective.instruction),
         temperature: 0.25,
       },
     });
@@ -285,13 +426,33 @@ export async function preceptorAnalyze(content: string | { mimeType: string, dat
       throw new Error("Case review generation failed.");
     }
 
-    return response.text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+    let lensText = cleanGeneratedText(response.text);
+    const lensContext = typeof content === 'string'
+      ? `Source case materials:\n${content}`
+      : `Source case materials: Uploaded files were provided for this case.\nLens requested: ${perspective.name}.`;
+
+    lensText = await repairMissingSectionsIfNeeded(
+      lensText,
+      `${perspective.name} context:\n\n${lensContext}`,
+    );
+
+    const missing = missingHeadings(lensText);
+    if (missing.length > 0) {
+      throw new Error(`Lens case review missing required headings: ${missing.join(', ')}`);
+    }
+
+    const lensContractErrors = headingContractErrors(lensText);
+    if (lensContractErrors.length > 0) {
+      throw new Error(`Lens case review failed required heading contract: ${lensContractErrors.join(' | ')}`);
+    }
+
+    return lensText;
   });
 }
 
 export async function generateFinalCaseReview(reviews: string[]): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const labeledReviews = reviews
+  const contextBlock = reviews
     .map((review, index) => `--- ${PRECEPTOR_LENS_NAMES[index] ?? `Lens ${index + 1}`} ---\n${review}`)
     .join('\n\n');
 
@@ -301,12 +462,12 @@ export async function generateFinalCaseReview(reviews: string[]): Promise<string
       contents: {
         parts: [
           {
-            text: `Synthesize these three preceptor lens reviews into one Final Case Review:\n\n${labeledReviews}`,
+            text: `Synthesize these three preceptor lens reviews into one Final Case Review:\n\n${contextBlock}`,
           },
         ],
       },
       config: {
-        systemInstruction: PRECEPTOR_FINAL_SYNTHESIS_INSTRUCTION,
+        systemInstruction: buildPreceptorSystemInstruction(PRECEPTOR_FINAL_SYNTHESIS_INSTRUCTION),
         temperature: 0.2,
       },
     });
@@ -316,7 +477,20 @@ export async function generateFinalCaseReview(reviews: string[]): Promise<string
     throw new Error('Final case review synthesis failed.');
   }
 
-  return response.text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  let finalText = cleanGeneratedText(response.text);
+  finalText = await repairMissingSectionsIfNeeded(finalText, contextBlock);
+
+  const missing = missingHeadings(finalText);
+  if (missing.length > 0) {
+    throw new Error(`Final case review missing required headings after repair: ${missing.join(', ')}`);
+  }
+
+  const finalContractErrors = headingContractErrors(finalText);
+  if (finalContractErrors.length > 0) {
+    throw new Error(`Final case review failed required heading contract: ${finalContractErrors.join(' | ')}`);
+  }
+
+  return finalText;
 }
 
 export async function generateLensDifferencesExplainer(reviews: string[]): Promise<string> {
@@ -346,7 +520,7 @@ export async function generateLensDifferencesExplainer(reviews: string[]): Promi
     throw new Error('Lens differences explainer generation failed.');
   }
 
-  return response.text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
+  return cleanGeneratedText(response.text);
 }
 
 export function startPreceptorChat(reviews: string[]): Chat {

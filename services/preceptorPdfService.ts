@@ -124,7 +124,6 @@ function getLocalMmDd(date: Date): string {
 export function formatCaseReviewPdfText(raw: string): string {
   return raw
     .replace(/\r/g, '')
-    .replace(/^\s*#{1,6}\s*/gm, '')
     .replace(/\*\*/g, '')
     .replace(/^\s*[-*]\s+/gm, '- ')
     .replace(/\[SECTION_\d+\]/gi, '')
