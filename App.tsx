@@ -135,7 +135,7 @@ const App: React.FC = () => {
       try {
         const result = await Promise.race([
           supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
         ]);
         const aal = (result as any)?.data;
         if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
@@ -143,6 +143,11 @@ const App: React.FC = () => {
         }
         return 'authenticated';
       } catch {
+        const { data: factors } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
+        const hasVerifiedTotp = factors?.totp?.some((f: any) => f.status === 'verified');
+        if (hasVerifiedTotp) {
+          return 'mfa_challenge';
+        }
         return 'authenticated';
       }
     };
