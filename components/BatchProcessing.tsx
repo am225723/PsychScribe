@@ -2,10 +2,9 @@ import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { FileData } from '../types';
 import {
   analyzeIntake,
-  generateFinalCaseReview,
-  generateLensDifferencesExplainer,
-  PRECEPTOR_LENS_NAMES,
-  preceptorAnalyze,
+  generatePerfectCaseReviewEdits,
+  generateV1V2DifferencesExplainer,
+  generateZeliskoSuperPreceptorNotes,
 } from '../services/geminiService';
 import { findOrCreatePatient, saveReport, getPatients } from '../services/supabaseService';
 import type { Patient } from '../services/supabaseService';
@@ -332,25 +331,28 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     const content = hasText ? (job.source.extractedText || '') : filesAsInline;
 
     if (stepType === 'preceptor') {
-      const lensOutputs: string[] = [];
+      updateStep(job.jobId, 'preceptor', { status: 'running', progress: 20 });
+      const { v1, v2 } = await generateZeliskoSuperPreceptorNotes(content);
 
-      for (let i = 0; i < PRECEPTOR_LENS_NAMES.length; i++) {
-        const targetProgress = i === 0 ? 15 : i === 1 ? 30 : 45;
-        updateStep(job.jobId, 'preceptor', {
-          status: 'running',
-          progress: targetProgress,
-        });
-        const lens = await preceptorAnalyze(content, i);
-        lensOutputs.push(lens);
-      }
-
-      updateStep(job.jobId, 'preceptor', { progress: 65 });
-      const finalReview = await generateFinalCaseReview(lensOutputs);
+      updateStep(job.jobId, 'preceptor', { progress: 60 });
+      const differences = await generateV1V2DifferencesExplainer();
 
       updateStep(job.jobId, 'preceptor', { progress: 80 });
-      await generateLensDifferencesExplainer(lensOutputs);
+      const edits = await generatePerfectCaseReviewEdits(v1, v2);
 
-      return finalReview;
+      return [
+        '## Zelisko Super Preceptor v1',
+        v1,
+        '',
+        '## Zelisko Super Preceptor v2',
+        v2,
+        '',
+        '## Differences Between v1 and v2',
+        differences,
+        '',
+        '## Perfect Case Review Edits',
+        edits,
+      ].join('\n');
     }
 
     const metadata =

@@ -397,7 +397,7 @@ const App: React.FC = () => {
     const docType = item.documentType;
     // Manual verification: save a summary, refresh, open from Vault; it should hydrate this view directly (not Upload).
 
-    if (docType === 'preceptor') {
+    if (docType === 'preceptor' || item.preceptorV1Text || item.preceptorV2Text) {
       setReport(null);
       navigate('/preceptor');
       window.scrollTo({ top: 0, behavior: 'smooth' });

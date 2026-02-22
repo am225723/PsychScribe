@@ -1,13 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  generateFinalCaseReview,
-  generateLensDifferencesExplainer,
-  PRECEPTOR_LENS_NAMES,
-  preceptorAnalyze,
+  generatePerfectCaseReviewEdits,
+  generateV1V2DifferencesExplainer,
+  generateZeliskoSuperPreceptorNotes,
 } from '../services/geminiService';
 import {
   clearStoredDirectoryHandle,
-  generatePreceptorBundlePdf,
+  generateZeliskoBundlePdf,
   getOrRequestPatientsParentDirectoryHandle,
   savePdfToDirectory,
   supportsFileSystemAccess,
@@ -32,6 +31,9 @@ type BatchRow = {
   status: BatchStatus;
   progress: number;
   message: string;
+  v1Progress: number;
+  v2Progress: number;
+  pdfProgress: number;
   savedPath?: string;
   error?: string;
 };
@@ -75,7 +77,7 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
 }) => {
   const [rows, setRows] = useState<BatchRow[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [downloadPdfs, setDownloadPdfs] = useState(true);
+  const [downloadPdfs, setDownloadPdfs] = useState(false);
   const [autoSaveToFolder, setAutoSaveToFolder] = useState(supportsFileSystemAccess());
   const [batchMessage, setBatchMessage] = useState('');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -107,6 +109,9 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
         status: 'queued',
         progress: 0,
         message: 'Waiting',
+        v1Progress: 0,
+        v2Progress: 0,
+        pdfProgress: 0,
       };
     });
 
@@ -140,59 +145,69 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
     setIsRunning(true);
     setBatchMessage('Batch processing started.');
 
+    let activeHandle = patientsParentHandle;
+    if (autoSaveToFolder && supportsFS && !activeHandle) {
+      activeHandle = await getOrRequestPatientsParentDirectoryHandle();
+      onPatientsParentHandleChange(activeHandle);
+    }
+
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
       setCurrentIndex(index + 1);
 
       try {
-        updateRow(row.id, { status: 'running', progress: 10, message: 'Reading file...' });
+        updateRow(row.id, {
+          status: 'running',
+          progress: 5,
+          message: 'Reading file...',
+          v1Progress: 0,
+          v2Progress: 0,
+          pdfProgress: 0,
+        });
+
         const part = await toBase64Part(row.file);
 
-        const lensOutputs: string[] = [];
-        const stageProgress = [15, 30, 45];
+        updateRow(row.id, { progress: 20, message: 'Generating Zelisko v1 + v2...', v1Progress: 15, v2Progress: 5 });
+        const { v1, v2 } = await generateZeliskoSuperPreceptorNotes([part]);
+        updateRow(row.id, { progress: 45, v1Progress: 100, v2Progress: 100 });
 
-        for (let lensIndex = 0; lensIndex < PRECEPTOR_LENS_NAMES.length; lensIndex++) {
-          updateRow(row.id, {
-            progress: stageProgress[lensIndex],
-            message: `Generating ${PRECEPTOR_LENS_NAMES[lensIndex]}...`,
-          });
-          const lensText = await preceptorAnalyze([part], lensIndex);
-          lensOutputs.push(lensText);
-        }
+        updateRow(row.id, { progress: 55, message: 'Generating v1/v2 differences...' });
+        const differencesExplainer = await generateV1V2DifferencesExplainer();
 
-        updateRow(row.id, { progress: 65, message: 'Generating Final Case Review...' });
-        const finalReview = await generateFinalCaseReview(lensOutputs);
+        updateRow(row.id, { progress: 65, message: 'Generating perfect case review edits...' });
+        const perfectCaseReviewEdits = await generatePerfectCaseReviewEdits(v1, v2);
 
-        updateRow(row.id, { progress: 80, message: 'Generating Lens Differences explainer...' });
-        const lensExplainer = await generateLensDifferencesExplainer(lensOutputs);
-
-        updateRow(row.id, { progress: 90, message: 'Creating bundle PDF...' });
-        const lensResults = PRECEPTOR_LENS_NAMES.map((name, idx) => ({
-          name,
-          content: lensOutputs[idx] || '',
-        }));
-
-        const { doc, filename, pdfBytes } = generatePreceptorBundlePdf({
+        updateRow(row.id, { progress: 75, message: 'Creating bundle PDF...', pdfProgress: 35 });
+        const { doc, filename, pdfBytes } = generateZeliskoBundlePdf({
           patientFirstInitial: row.firstInitial,
           patientLastName: row.lastName,
           date: new Date(),
-          lensExplainer,
-          lenses: lensResults,
-          finalReview,
+          differencesExplainer,
+          perfectCaseReviewEdits,
+          v1,
+          v2,
         });
 
         if (downloadPdfs) {
           triggerBrowserDownload(doc, filename);
         }
+        updateRow(row.id, { progress: 85, pdfProgress: 70 });
 
         let savedPath: string | undefined;
-        if (autoSaveToFolder && supportsFS && patientsParentHandle) {
-          savedPath = await savePdfToDirectory({
-            pdfBytes,
-            filename,
-            patientsParentDirHandle: patientsParentHandle,
-            patientFolderName: row.patientFolderName,
-          });
+        if (autoSaveToFolder && supportsFS) {
+          if (!activeHandle) {
+            activeHandle = await getOrRequestPatientsParentDirectoryHandle();
+            onPatientsParentHandleChange(activeHandle);
+          }
+
+          if (activeHandle) {
+            savedPath = await savePdfToDirectory({
+              pdfBytes,
+              filename,
+              patientsParentDirHandle: activeHandle,
+              patientFolderName: row.patientFolderName,
+            });
+          }
         }
 
         const vaultItem: VaultItem = {
@@ -206,20 +221,32 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           },
           sourceFileName: row.file.name,
           sourceMimeType: row.file.type,
-          generatedText: finalReview,
-          lensReviews: lensOutputs,
-          finalReview,
-          lensExplainer,
-          title: 'Dr. Zelisko — Preceptor Case Review Bundle',
+          generatedText: [v1, v2].join('\n\n'),
+          preceptorV1Text: v1,
+          preceptorV2Text: v2,
+          differencesExplainer,
+          perfectCaseReviewEdits,
+          title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
         };
         onSaveVaultItem?.(vaultItem);
+
+        const resultMessage = savedPath
+          ? downloadPdfs
+            ? 'Done (downloaded + saved)'
+            : 'Done (saved)'
+          : downloadPdfs
+            ? 'Done (downloaded)'
+            : autoSaveToFolder && supportsFS
+              ? 'Done (folder permission missing)'
+              : 'Done';
 
         updateRow(row.id, {
           status: 'done',
           progress: 100,
-          message: savedPath ? 'Done (downloaded + saved)' : 'Done (downloaded)',
+          message: resultMessage,
           savedPath,
           error: undefined,
+          pdfProgress: 100,
         });
       } catch (error: any) {
         updateRow(row.id, {
@@ -277,7 +304,7 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
               className="w-4 h-4"
               disabled={isRunning}
             />
-            Download PDFs
+            Download PDFs (optional)
           </label>
           <label className="flex items-center gap-2 text-xs font-bold text-teal-900">
             <input
@@ -314,7 +341,7 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
 
       {rows.length > 0 && (
         <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] border border-teal-50 p-4 space-y-3 overflow-auto">
-          <table className="w-full min-w-[780px] text-xs">
+          <table className="w-full min-w-[920px] text-xs">
             <thead>
               <tr className="text-teal-800/50 uppercase tracking-[0.15em] text-[10px]">
                 <th className="text-left py-2">File</th>
@@ -359,12 +386,32 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
                     />
                   </td>
                   <td className="py-2">
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       <div className="h-2 bg-teal-50 rounded overflow-hidden">
                         <div
                           className={`h-full transition-all ${row.status === 'error' ? 'bg-red-500' : 'bg-teal-600'}`}
                           style={{ width: `${row.progress}%` }}
                         />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-[10px]">
+                        <div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">v1</div>
+                          <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
+                            <div className="h-full bg-teal-500" style={{ width: `${row.v1Progress}%` }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">v2</div>
+                          <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
+                            <div className="h-full bg-indigo-500" style={{ width: `${row.v2Progress}%` }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="font-bold text-teal-800/70 mb-1 uppercase tracking-wider">pdf</div>
+                          <div className="h-1.5 bg-slate-100 rounded overflow-hidden">
+                            <div className="h-full bg-emerald-500" style={{ width: `${row.pdfProgress}%` }} />
+                          </div>
+                        </div>
                       </div>
                       <div className="text-[10px] font-bold text-teal-800/70">
                         {row.message}{row.error ? `: ${row.error}` : ''}

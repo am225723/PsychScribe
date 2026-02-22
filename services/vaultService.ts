@@ -14,6 +14,10 @@ export type VaultItem = {
   sourceMimeType?: string;
   sourceText?: string;
   generatedText?: string;
+  preceptorV1Text?: string;
+  preceptorV2Text?: string;
+  differencesExplainer?: string;
+  perfectCaseReviewEdits?: string;
   lensReviews?: string[];
   finalReview?: string;
   lensExplainer?: string;
@@ -53,11 +57,33 @@ function parsePatientFromText(text: string): { firstInitial?: string; lastName?:
 }
 
 function migrateItem(input: any): VaultItem {
+  const lensReviews = Array.isArray(input?.lensReviews)
+    ? input.lensReviews.filter((x: unknown) => typeof x === 'string')
+    : undefined;
+
+  const preceptorV1Text = typeof input?.preceptorV1Text === 'string'
+    ? input.preceptorV1Text
+    : lensReviews?.[0];
+
+  const preceptorV2Text = typeof input?.preceptorV2Text === 'string'
+    ? input.preceptorV2Text
+    : lensReviews?.[1];
+
+  const differencesExplainer = typeof input?.differencesExplainer === 'string'
+    ? input.differencesExplainer
+    : typeof input?.lensExplainer === 'string'
+      ? input.lensExplainer
+      : undefined;
+  const perfectCaseReviewEdits = typeof input?.perfectCaseReviewEdits === 'string'
+    ? input.perfectCaseReviewEdits
+    : undefined;
+
+  const fallbackPreceptorText = [preceptorV1Text, preceptorV2Text].filter(Boolean).join('\n\n');
   const generatedText = typeof input?.generatedText === 'string'
     ? input.generatedText
     : typeof input?.content === 'string'
       ? input.content
-      : '';
+      : fallbackPreceptorText;
 
   const patient = input?.patient || parsePatientFromText(generatedText);
 
@@ -75,9 +101,11 @@ function migrateItem(input: any): VaultItem {
     sourceMimeType: input?.sourceMimeType,
     sourceText: input?.sourceText,
     generatedText,
-    lensReviews: Array.isArray(input?.lensReviews)
-      ? input.lensReviews.filter((x: unknown) => typeof x === 'string')
-      : undefined,
+    preceptorV1Text,
+    preceptorV2Text,
+    differencesExplainer,
+    perfectCaseReviewEdits,
+    lensReviews,
     finalReview: typeof input?.finalReview === 'string' ? input.finalReview : undefined,
     lensExplainer: typeof input?.lensExplainer === 'string' ? input.lensExplainer : undefined,
     title: typeof input?.title === 'string' ? input.title : undefined,

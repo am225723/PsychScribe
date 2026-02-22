@@ -1,15 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Chat } from '@google/genai';
 import {
-  generateFinalCaseReview,
-  generateLensDifferencesExplainer,
-  PRECEPTOR_LENS_NAMES,
-  preceptorAnalyze,
-  startPreceptorChat,
+  generatePerfectCaseReviewEdits,
+  generateV1V2DifferencesExplainer,
+  generateZeliskoSuperPreceptorNotes,
+  startZeliskoPreceptorChat,
 } from '../services/geminiService';
 import {
   clearStoredDirectoryHandle,
-  generatePreceptorBundlePdf,
+  generateZeliskoBundlePdf,
   getOrRequestPatientsParentDirectoryHandle,
   savePdfToDirectory,
   supportsFileSystemAccess,
@@ -31,8 +30,6 @@ interface PreceptorProps {
   onSaveVaultItem?: (item: VaultItem) => void;
 }
 
-const LENS_ICONS = ['fa-heart-pulse', 'fa-scale-balanced', 'fa-seedling'];
-
 function sanitizeNamePart(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '').trim();
 }
@@ -44,9 +41,7 @@ function defaultPatientFolder(lastName: string, firstInitial: string): string {
 }
 
 function getTabBadgeColor(tabIndex: number): string {
-  if (tabIndex === 4) return 'bg-amber-100 text-amber-700';
-  if (tabIndex === 2) return 'bg-indigo-100 text-indigo-700';
-  if (tabIndex === 3) return 'bg-emerald-100 text-emerald-700';
+  if (tabIndex === 1) return 'bg-indigo-100 text-indigo-700';
   return 'bg-teal-100 text-teal-700';
 }
 
@@ -55,8 +50,10 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   const [phase, setPhase] = useState<Phase>('upload');
   const [files, setFiles] = useState<File[]>([]);
   const [textInput, setTextInput] = useState('');
-  const [reviews, setReviews] = useState<string[]>([]);
-  const [lensExplainer, setLensExplainer] = useState('');
+  const [preceptorV1Text, setPreceptorV1Text] = useState('');
+  const [preceptorV2Text, setPreceptorV2Text] = useState('');
+  const [differencesExplainer, setDifferencesExplainer] = useState('');
+  const [perfectCaseReviewEdits, setPerfectCaseReviewEdits] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [processing, setProcessing] = useState<number>(-1);
   const [error, setError] = useState('');
@@ -65,7 +62,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   const [chatInput, setChatInput] = useState('');
   const [chatSending, setChatSending] = useState(false);
   const [chatInstance, setChatInstance] = useState<Chat | null>(null);
-  const [finalReview, setFinalReview] = useState('');
 
   const [patientFirstInitial, setPatientFirstInitial] = useState('');
   const [patientLastName, setPatientLastName] = useState('');
@@ -77,7 +73,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const supportsFS = supportsFileSystemAccess();
 
   useEffect(() => {
@@ -87,21 +82,30 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   useEffect(() => {
     if (!initialVaultItem || initialVaultItem.documentType !== 'preceptor') return;
 
+    const hydratedV1 = initialVaultItem.preceptorV1Text || initialVaultItem.lensReviews?.[0] || initialVaultItem.generatedText || '';
+    const hydratedV2 = initialVaultItem.preceptorV2Text || initialVaultItem.lensReviews?.[1] || '';
+    const hydratedDiff = initialVaultItem.differencesExplainer || initialVaultItem.lensExplainer || '';
+    const hydratedEdits = initialVaultItem.perfectCaseReviewEdits || '';
+
     setMode('single');
     setFiles([]);
     setTextInput(initialVaultItem.sourceText || '');
-    setReviews(initialVaultItem.lensReviews || []);
-    setFinalReview(initialVaultItem.finalReview || initialVaultItem.generatedText || '');
-    setLensExplainer(initialVaultItem.lensExplainer || '');
+    setPreceptorV1Text(hydratedV1);
+    setPreceptorV2Text(hydratedV2);
+    setDifferencesExplainer(hydratedDiff);
+    setPerfectCaseReviewEdits(hydratedEdits);
     setPatientFirstInitial((initialVaultItem.patient?.firstInitial || '').toUpperCase().slice(0, 1));
     setPatientLastName(initialVaultItem.patient?.lastName || '');
     setPatientFolderName(
       initialVaultItem.patient?.folderName ||
       defaultPatientFolder(initialVaultItem.patient?.lastName || '', initialVaultItem.patient?.firstInitial || ''),
     );
-    setActiveTab(initialVaultItem.finalReview || initialVaultItem.generatedText ? 4 : 0);
-    setPhase('review');
+    setActiveTab(0);
+    setPhase(hydratedV1 || hydratedV2 ? 'review' : 'upload');
     setError('');
+    setChatInstance(null);
+    setChatMessages([]);
+    setChatInput('');
     setExportMessage('Vault item loaded. Upload step was bypassed.');
   }, [initialVaultItem]);
 
@@ -168,9 +172,10 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   };
 
   const buildVaultItem = (
-    lenses: string[],
-    finalText: string,
+    v1Text: string,
+    v2Text: string,
     explainer: string,
+    edits: string,
     sourceText: string,
   ): VaultItem => ({
     id: `preceptor-${Date.now()}`,
@@ -182,43 +187,40 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
       folderName: patientFolderName || defaultPatientFolder(patientLastName, patientFirstInitial),
     },
     sourceText,
-    generatedText: finalText,
-    lensReviews: lenses,
-    finalReview: finalText,
-    lensExplainer: explainer,
-    title: 'Dr. Zelisko — Preceptor Case Review Bundle',
+    generatedText: [v1Text, v2Text].filter(Boolean).join('\n\n'),
+    preceptorV1Text: v1Text,
+    preceptorV2Text: v2Text,
+    differencesExplainer: explainer,
+    perfectCaseReviewEdits: edits,
+    title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
   });
 
   const exportBundlePdf = async (
-    lensesInput = reviews,
-    finalInput = finalReview,
-    explainerInput = lensExplainer,
+    v1Input = preceptorV1Text,
+    v2Input = preceptorV2Text,
+    explainerInput = differencesExplainer,
+    editsInput = perfectCaseReviewEdits,
   ) => {
-    if (lensesInput.length < 3 || !finalInput) {
-      setExportMessage('Bundle export requires all three lens reviews and final synthesis.');
+    if (!v1Input || !v2Input) {
+      setExportMessage('Bundle export requires both Zelisko notes (v1 and v2).');
       return;
     }
 
-    const lensResults = PRECEPTOR_LENS_NAMES.map((name, index) => ({
-      name,
-      content: lensesInput[index] || '',
-    }));
-
     const folderName = patientFolderName || defaultPatientFolder(patientLastName, patientFirstInitial);
-    const { doc, filename, pdfBytes } = generatePreceptorBundlePdf({
+    const { doc, filename, pdfBytes } = generateZeliskoBundlePdf({
       patientFirstInitial,
       patientLastName,
       date: new Date(),
-      lensExplainer: explainerInput,
-      lenses: lensResults,
-      finalReview: finalInput,
-      title: 'Dr. Zelisko — Preceptor Case Review Bundle',
+      differencesExplainer: explainerInput,
+      perfectCaseReviewEdits: editsInput,
+      v1: v1Input,
+      v2: v2Input,
+      title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
     });
 
     triggerBrowserDownload(doc, filename);
 
     if (autoSaveToFolder && supportsFS) {
-      // Browser apps need explicit user-granted permission before writing to local folders.
       let handle = patientsParentHandle;
       if (!handle) {
         handle = await getOrRequestPatientsParentDirectoryHandle();
@@ -262,79 +264,60 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     try {
       let content: string | { mimeType: string; data: string }[];
       if (files.length > 0) {
+        setProcessing(0);
         content = await Promise.all(files.map(readFileAsBase64));
       } else {
         content = textInput;
       }
 
-      const newReviews: string[] = [];
+      setProcessing(1);
+      const { v1, v2 } = await generateZeliskoSuperPreceptorNotes(content);
 
-      for (let i = 0; i < 3; i++) {
-        setProcessing(i);
-        const result = await preceptorAnalyze(content, i);
-        newReviews.push(result);
-      }
+      setProcessing(2);
+      const explainer = await generateV1V2DifferencesExplainer();
 
       setProcessing(3);
-      const synthesizedFinal = await generateFinalCaseReview(newReviews);
+      const edits = await generatePerfectCaseReviewEdits(v1, v2);
+
+      setPreceptorV1Text(v1);
+      setPreceptorV2Text(v2);
+      setDifferencesExplainer(explainer);
+      setPerfectCaseReviewEdits(edits);
 
       setProcessing(4);
-      const differencesExplainer = await generateLensDifferencesExplainer(newReviews);
-
-      setReviews(newReviews);
-      setFinalReview(synthesizedFinal);
-      setLensExplainer(differencesExplainer);
-
-      setProcessing(5);
-      await exportBundlePdf(newReviews, synthesizedFinal, differencesExplainer);
+      await exportBundlePdf(v1, v2, explainer, edits);
 
       const sourceText = typeof content === 'string' ? content : '';
-      onSaveVaultItem?.(buildVaultItem(newReviews, synthesizedFinal, differencesExplainer, sourceText));
+      onSaveVaultItem?.(buildVaultItem(v1, v2, explainer, edits, sourceText));
 
       setProcessing(-1);
-      setActiveTab(4);
+      setActiveTab(0);
+      setChatInstance(null);
+      setChatMessages([]);
+      setChatInput('');
       setPhase('review');
     } catch (err: any) {
-      setError(err?.message || 'Failed to generate case review bundle.');
+      setError(err?.message || 'Failed to generate Zelisko preceptor notes.');
       setPhase('upload');
       setProcessing(-1);
     }
   };
 
   const startChat = () => {
-    if (reviews.length < 3) return;
+    if (!preceptorV1Text || !preceptorV2Text) return;
 
     if (!chatInstance) {
-      const chat = startPreceptorChat(reviews);
+      const chat = startZeliskoPreceptorChat(preceptorV1Text, preceptorV2Text, differencesExplainer);
       setChatInstance(chat);
       setChatMessages([
         {
           role: 'assistant',
-          text: `I can help compare the three lens reviews, tighten sections, and refine the final synthesis.\n\nWhat would you like to improve first?`,
+          text: 'I can compare Zelisko v1 and v2, tighten language, and rewrite specific sections. What do you want to improve first?',
         },
       ]);
     }
 
     setPhase('chat');
-  };
-
-  const compileFinalReview = async () => {
-    if (!chatInstance || chatSending) return;
-    const compileMsg = 'Refine the final case review using the strongest content from all three lenses. Keep it concise and clinically actionable.';
-    setChatMessages((prev) => [...prev, { role: 'user', text: compileMsg }]);
-    setChatSending(true);
-
-    try {
-      const response = await chatInstance.sendMessage({ message: compileMsg });
-      const text = response.text || 'No response generated.';
-      setChatMessages((prev) => [...prev, { role: 'assistant', text }]);
-      setFinalReview(text);
-      setActiveTab(4);
-    } catch (err: any) {
-      setChatMessages((prev) => [...prev, { role: 'assistant', text: `Error: ${err.message}` }]);
-    } finally {
-      setChatSending(false);
-    }
   };
 
   const sendChatMessage = async () => {
@@ -367,14 +350,15 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     setPhase('upload');
     setFiles([]);
     setTextInput('');
-    setReviews([]);
-    setLensExplainer('');
+    setPreceptorV1Text('');
+    setPreceptorV2Text('');
+    setDifferencesExplainer('');
+    setPerfectCaseReviewEdits('');
     setActiveTab(0);
     setError('');
     setChatMessages([]);
     setChatInput('');
     setChatInstance(null);
-    setFinalReview('');
     setProcessing(-1);
     setExportMessage('');
   };
@@ -417,23 +401,19 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   };
 
   const processingStages = [
-    ...PRECEPTOR_LENS_NAMES,
-    'Final Case Review',
-    'Lens Differences Explainer',
+    'Preparing Input',
+    'Generating Zelisko v1 + v2',
+    'Generating v1/v2 Differences',
+    'Generating Perfect Case Review Edits',
     'Bundle PDF Export',
   ];
 
   const tabItems = [
-    { label: 'Lens Differences', icon: 'fa-diagram-project' },
-    ...PRECEPTOR_LENS_NAMES.map((name, idx) => ({ label: name, icon: LENS_ICONS[idx] })),
-    { label: 'Final Case Review', icon: 'fa-crown' },
+    { label: 'Zelisko v1', icon: 'fa-stethoscope' },
+    { label: 'Zelisko v2', icon: 'fa-notes-medical' },
   ];
 
-  const activeContent = (() => {
-    if (activeTab === 0) return lensExplainer;
-    if (activeTab >= 1 && activeTab <= 3) return reviews[activeTab - 1] || '';
-    return finalReview;
-  })();
+  const activeContent = activeTab === 1 ? preceptorV2Text : preceptorV1Text;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -467,8 +447,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
               <div className="w-16 h-16 bg-teal-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <i className="fa-solid fa-user-graduate text-2xl text-teal-700"></i>
               </div>
-              <h2 className="text-xl font-black text-teal-950 uppercase tracking-tight">Generating Case Review Bundle</h2>
-              <p className="text-xs text-teal-800/40 font-bold uppercase tracking-widest mt-1">3 Lenses + Final + Explainer + PDF</p>
+              <h2 className="text-xl font-black text-teal-950 uppercase tracking-tight">Generating Zelisko Bundle</h2>
+              <p className="text-xs text-teal-800/40 font-bold uppercase tracking-widest mt-1">v1 + v2 + Differences + Edits + PDF</p>
             </div>
 
             <div className="space-y-4">
@@ -518,11 +498,11 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-black text-teal-950 uppercase tracking-tight">Case Review Results</h2>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-teal-800/40 mt-1">Bundle-ready with lens differences + final synthesis</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-teal-800/40 mt-1">Bundle-ready with Zelisko v1 + Zelisko v2</p>
             </div>
             <div className="flex gap-2">
               <button
-                onClick={startChat}
+                onClick={() => (phase === 'chat' ? setPhase('review') : startChat())}
                 className={`px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${
                   phase === 'chat'
                     ? 'bg-teal-800 text-white shadow-xl'
@@ -530,11 +510,11 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                 }`}
               >
                 <i className="fa-solid fa-comments"></i>
-                AI Advisor
+                {phase === 'chat' ? 'Close Chat' : 'AI Advisor'}
               </button>
               <button
                 onClick={() => exportBundlePdf()}
-                disabled={!finalReview || reviews.length < 3}
+                disabled={!preceptorV1Text || !preceptorV2Text}
                 className="px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest bg-indigo-600 text-white hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <i className="fa-solid fa-file-pdf"></i>
@@ -597,6 +577,20 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
               </span>
             </div>
 
+            {differencesExplainer && (
+              <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-1">Differences between v1 and v2</p>
+                <div className="text-xs text-indigo-900/80 leading-relaxed">{renderMarkdown(differencesExplainer)}</div>
+              </div>
+            )}
+
+            {perfectCaseReviewEdits && (
+              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 mb-1">Perfect Case Review Edits</p>
+                <div className="text-xs text-amber-900/80 leading-relaxed">{renderMarkdown(perfectCaseReviewEdits)}</div>
+              </div>
+            )}
+
             {exportMessage && <p className="text-xs font-bold text-emerald-700">{exportMessage}</p>}
           </div>
 
@@ -607,9 +601,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                 onClick={() => setActiveTab(i)}
                 className={`px-4 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest whitespace-nowrap transition-all flex items-center gap-2 ${
                   activeTab === i
-                    ? i === 4
-                      ? 'bg-amber-600 text-white shadow-lg'
-                      : 'bg-teal-800 text-white shadow-lg'
+                    ? 'bg-teal-800 text-white shadow-lg'
                     : 'bg-white text-slate-500 border border-slate-200 hover:border-teal-200 hover:text-teal-700'
                 }`}
               >
@@ -678,7 +670,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                         value={chatInput}
                         onChange={(e) => setChatInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Compare sections, tighten language, refine final..."
+                        placeholder="Compare sections, tighten language, rewrite v1/v2 blocks..."
                         className="flex-1 px-4 py-3 rounded-xl border border-teal-100 bg-white text-sm focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none resize-none"
                         rows={2}
                       />
@@ -691,7 +683,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                       </button>
                     </div>
                     <div className="flex gap-1.5 mt-2 flex-wrap">
-                      {['Compare all sections', 'Which lens is strongest for compliance?'].map((q, i) => (
+                      {['Compare v1 vs v2 by section', 'Tighten risk language for charting'].map((q, i) => (
                         <button
                           key={i}
                           onClick={() => {
@@ -702,14 +694,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                           {q}
                         </button>
                       ))}
-                      <button
-                        onClick={compileFinalReview}
-                        disabled={chatSending}
-                        className="px-3 py-1.5 rounded-lg bg-amber-50 text-amber-700 text-[9px] font-bold uppercase tracking-wider hover:bg-amber-100 transition-all border border-amber-200 flex items-center gap-1"
-                      >
-                        <i className="fa-solid fa-crown text-[8px]"></i>
-                        Refine Final
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -860,24 +844,25 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
             )}
 
             <div className="bg-slate-50 rounded-2xl p-5 space-y-3">
-              <p className="text-[9px] font-black uppercase tracking-widest text-teal-800/40 mb-3">Three Lenses + Deterministic Final</p>
-              {PRECEPTOR_LENS_NAMES.map((name, i) => (
-                <div key={name} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center">
-                    <i className={`fa-solid ${LENS_ICONS[i]} text-xs`}></i>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-teal-900">{name}</p>
-                    <p className="text-[9px] text-slate-400">
-                      {i === 0
-                        ? 'Differential + physiology-first reasoning.'
-                        : i === 1
-                          ? 'Defensible language + compliance quality.'
-                          : 'Biopsychosocial + lifestyle treatment targets.'}
-                    </p>
-                  </div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-teal-800/40 mb-3">Zelisko Super Preceptor Variants</p>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center">
+                  <i className="fa-solid fa-stethoscope text-xs"></i>
                 </div>
-              ))}
+                <div>
+                  <p className="text-xs font-bold text-teal-900">Zelisko Super Preceptor v1</p>
+                  <p className="text-[9px] text-slate-400">Expanded structure with taper brakes and risk escalation thresholds.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                  <i className="fa-solid fa-notes-medical text-xs"></i>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-teal-900">Zelisko Super Preceptor v2</p>
+                  <p className="text-[9px] text-slate-400">Compact variant with different layout and concise execution flow.</p>
+                </div>
+              </div>
             </div>
 
             <button
@@ -889,8 +874,8 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                   : 'bg-teal-900 hover:bg-black hover:-translate-y-1 shadow-teal-900/20 active:translate-y-0'
               }`}
             >
-              <i className="fa-solid fa-wand-magic-sparkles"></i>
-              Generate & Auto Export Bundle
+              <i className="fa-solid fa-paper-plane"></i>
+              Send (Generate v1 + v2)
             </button>
           </div>
         </div>

@@ -5,18 +5,14 @@ import {
   storePatientsParentHandle,
 } from './fsHandleStore';
 
-export type LensResult = {
-  name: string;
-  content: string;
-};
-
-type BundleParams = {
+type ZeliskoBundleParams = {
   patientFirstInitial: string;
   patientLastName: string;
   date: Date;
-  lensExplainer: string;
-  lenses: LensResult[];
-  finalReview: string;
+  differencesExplainer: string;
+  perfectCaseReviewEdits: string;
+  v1: string;
+  v2: string;
   title?: string;
 };
 
@@ -35,18 +31,10 @@ const HEADER_SIZE = 12;
 const BODY_SIZE = 10;
 
 const SECTION_PREFACE: Record<string, string> = {
-  'How the Lenses Differ': 'What this section optimizes: rapid orientation to each lens so supervisors and trainees can compare reasoning styles before detailed review.',
-  'Clinical Excellence': 'What this lens optimizes: differential diagnosis depth, physiology-first framing, and high-yield decision thresholds tied to safety and function.',
-  'Documentation & Compliance': 'What this lens optimizes: defensible language, audit-ready rationale, explicit risk statements, and legally durable chart construction.',
-  'Integrative & Holistic': 'What this lens optimizes: biopsychosocial formulation, lifestyle and behavioral targets, and whole-person treatment sequencing.',
-  'Final Case Review (Synthesis)': 'What this section optimizes: one coherent plan that merges the strongest clinical, compliance, and integrative elements into executable next steps.',
+  'Differences Between v1 and v2': 'This page is a quick orientation to conceptual differences between Zelisko Super Preceptor v1 and v2.',
+  'Zelisko Super Preceptor v1': 'v1 is the comprehensive variant with expanded safety threshold framing and taper brake teaching structure.',
+  'Zelisko Super Preceptor v2': 'v2 is the compact variant with a streamlined section layout while preserving practical clinical actionability.',
 };
-
-const LENS_ORDER = [
-  'Clinical Excellence',
-  'Documentation & Compliance',
-  'Integrative & Holistic',
-];
 
 function sanitizeNamePart(value: string): string {
   return value.replace(/[\\/:*?"<>|\s]+/g, '').replace(/[^a-zA-Z0-9_-]/g, '').trim();
@@ -110,11 +98,6 @@ function writeSection(doc: jsPDF, title: string, body: string, forceNewPage: boo
   writeWrappedText(doc, formatCaseReviewPdfText(body), y);
 }
 
-function getOrderedLensResults(lenses: LensResult[]): LensResult[] {
-  const byName = new Map(lenses.map((lens) => [lens.name.trim(), lens]));
-  return LENS_ORDER.map((name) => byName.get(name) ?? { name, content: '' });
-}
-
 function getLocalMmDd(date: Date): string {
   const mm = String(date.getMonth() + 1).padStart(2, '0');
   const dd = String(date.getDate()).padStart(2, '0');
@@ -140,7 +123,7 @@ export function buildFilename(patientFirstInitial: string, patientLastName: stri
   return base.includes(' ') ? base : base;
 }
 
-export function generatePreceptorBundlePdf(params: BundleParams): {
+export function generateZeliskoBundlePdf(params: ZeliskoBundleParams): {
   doc: jsPDF;
   filename: string;
   pdfBytes: Uint8Array;
@@ -149,10 +132,11 @@ export function generatePreceptorBundlePdf(params: BundleParams): {
     patientFirstInitial,
     patientLastName,
     date,
-    lensExplainer,
-    lenses,
-    finalReview,
-    title = 'Dr. Zelisko - Preceptor Case Review Bundle',
+    differencesExplainer,
+    perfectCaseReviewEdits,
+    v1,
+    v2,
+    title = 'Dr. Zelisko - Super Preceptor Case Review Bundle',
   } = params;
 
   const doc = new jsPDF();
@@ -172,24 +156,34 @@ export function generatePreceptorBundlePdf(params: BundleParams): {
   const sectionStartY = addDivider(doc, TOP_MARGIN + 18);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(HEADER_SIZE);
-  doc.text('How the Lenses Differ', SIDE_MARGIN, sectionStartY);
+  doc.text('Differences Between v1 and v2', SIDE_MARGIN, sectionStartY);
 
   let y = sectionStartY + 8;
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(BODY_SIZE);
   doc.setTextColor(33, 74, 74);
-  y = writeWrappedText(doc, SECTION_PREFACE['How the Lenses Differ'], y);
+  y = writeWrappedText(doc, SECTION_PREFACE['Differences Between v1 and v2'], y);
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(26, 26, 26);
-  writeWrappedText(doc, formatCaseReviewPdfText(lensExplainer), y + 2);
+  y = writeWrappedText(doc, formatCaseReviewPdfText(differencesExplainer), y + 2);
 
-  const orderedLenses = getOrderedLensResults(lenses);
-  for (const lens of orderedLenses) {
-    writeSection(doc, lens.name, lens.content, true);
-  }
+  y += 4;
+  y = ensurePageSpace(doc, y, 3);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(HEADER_SIZE);
+  doc.setTextColor(10, 63, 63);
+  doc.text('Perfect Case Review Edits', SIDE_MARGIN, y);
+  y += 4;
+  y = addDivider(doc, y);
 
-  writeSection(doc, 'Final Case Review (Synthesis)', finalReview, true);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(BODY_SIZE);
+  doc.setTextColor(26, 26, 26);
+  writeWrappedText(doc, formatCaseReviewPdfText(perfectCaseReviewEdits || '- None identified.'), y);
+
+  writeSection(doc, 'Zelisko Super Preceptor v1', v1, true);
+  writeSection(doc, 'Zelisko Super Preceptor v2', v2, true);
 
   const filename = buildFilename(patientFirstInitial, patientLastName, date);
   const rawBytes = doc.output('arraybuffer');
