@@ -2,9 +2,9 @@ import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { FileData } from '../types';
 import {
   analyzeIntake,
-  generatePerfectCaseReviewEdits,
   generateV1V2DifferencesExplainer,
-  generateZeliskoSuperPreceptorNotes,
+  generateZeliskoSuperPreceptorV1,
+  generateZeliskoSuperPreceptorV2,
 } from '../services/geminiService';
 import { findOrCreatePatient, saveReport, getPatients } from '../services/supabaseService';
 import type { Patient } from '../services/supabaseService';
@@ -332,13 +332,13 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
 
     if (stepType === 'preceptor') {
       updateStep(job.jobId, 'preceptor', { status: 'running', progress: 20 });
-      const { v1, v2 } = await generateZeliskoSuperPreceptorNotes(content);
+      const v1 = await generateZeliskoSuperPreceptorV1(content);
 
       updateStep(job.jobId, 'preceptor', { progress: 60 });
-      const differences = await generateV1V2DifferencesExplainer();
+      const v2 = await generateZeliskoSuperPreceptorV2(content);
 
       updateStep(job.jobId, 'preceptor', { progress: 80 });
-      const edits = await generatePerfectCaseReviewEdits(v1, v2);
+      const differences = await generateV1V2DifferencesExplainer();
 
       return [
         '## Zelisko Super Preceptor v1',
@@ -349,9 +349,6 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
         '',
         '## Differences Between v1 and v2',
         differences,
-        '',
-        '## Perfect Case Review Edits',
-        edits,
       ].join('\n');
     }
 

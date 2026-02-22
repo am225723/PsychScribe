@@ -1,5 +1,6 @@
-
 import { GoogleGenAI, Chat } from "@google/genai";
+import ZELISKO_SUPER_PRECEPTOR_V1_VERBATIM from '../attached_assets/Pasted--SYSTEM-INSTRUCTIONS-DR-ZELISKO-SUPER-PRECEPTOR-CASE-RE_1771575703689.txt?raw';
+import ZELISKO_SUPER_PRECEPTOR_V2_VERBATIM from '../attached_assets/Pasted-You-are-Douglas-Zelisko-M-D-serving-as-the-clinical-pre_1771575997814.txt?raw';
 
 const SYSTEM_INSTRUCTION = `You are a world-class Senior Psychiatric Medical Scribe and Clinical Intake Specialist. Your objective is to transform raw intake data into an exhaustive, high-fidelity "Clinical Synthesis Report". 
 
@@ -209,8 +210,36 @@ function cleanGeneratedText(text: string): string {
   return text.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
 }
 
-const ZELISKO_SUPER_PRECEPTOR_V1 = `PASTE VERBATIM PROMPT #1 FROM USER MESSAGE`;
-const ZELISKO_SUPER_PRECEPTOR_V2 = `PASTE VERBATIM PROMPT #2 FROM USER MESSAGE`;
+const ZELISKO_SUPER_PRECEPTOR_V1 = ZELISKO_SUPER_PRECEPTOR_V1_VERBATIM;
+const ZELISKO_SUPER_PRECEPTOR_V2 = ZELISKO_SUPER_PRECEPTOR_V2_VERBATIM;
+
+const FORMAT_LOCK = `
+OUTPUT STYLE LOCK (NON-NEGOTIABLE):
+- Match the “Zelisko memo” exemplar style: compact bullets, clinically dense, no fluff.
+- Use these exact section headers (with emojis) and order:
+  Header
+  Introductory Note
+  🧾 1. Case Summary (The Snapshot)
+  🩺 2. Diagnostic Reasoning Feedback
+  💊 3. Treatment Plan Review
+  🔁 4. Clinical Toolkit (The Scripts)
+  📑 5. Documentation Strategy (Liability & Safety)
+  🧠 6. Teaching Pearl (The "Why")
+  💡 7. Suggestions
+  8. The Second Lens
+- Inside sections, include the hallmark sub-elements from the exemplars:
+  - Clinical Risk Snapshot + Priority Problem List in section 1
+  - The Win / The Pivot + Differential + Red Flags + 3–6 Targeted Clarifying Questions in section 2
+  - Medication Reality Check + The Weak Point (Critical) + Monitoring Plan + Today vs Later in section 3
+  - At least 2 verbatim scripts in section 4 (include controlled-substance boundary script when relevant)
+  - In section 5: “Vague → Defensible” rewrites + One Must-Document Sentence + Must-Have Bullets
+  - In section 6: mechanism + “How this changes Monday morning”
+  - In section 7: labs/scales + decision tree + failure modes
+  - In section 8: Cold Logic + Counter-Point
+- Do not mention or criticize absent vitals. You may recommend monitoring as part of safe prescribing without saying “missing”.
+- Use plain text with bullet points (● or -). Avoid heavy markdown.
+- Start immediately with the Header line “To: …” (no preamble).
+`.trim();
 
 const V1_V2_DIFFERENCES_INSTRUCTION = `Explain how v1 differs from v2: v1 includes [Taper Brakes + Risk Escalation Thresholds], v2 is slightly more compact and uses a different section layout. Keep generic.
 Rules:
@@ -219,63 +248,65 @@ Rules:
 - Do not mention patient-specific details.
 - Do not mention missing data.`;
 
-const PERFECT_CASE_REVIEW_EDITS_INSTRUCTION = `You are a psychiatric preceptor editor.
-Task:
-- From the two draft notes (v1 and v2), list the specific edits needed to make a final case review maximally strong and defensible.
+function buildPreceptorParts(content: string | { mimeType: string; data: string }[]): any[] {
+  if (typeof content === 'string') {
+    return [{ text: content }];
+  }
 
-Rules:
-- Use concise bullet points only.
-- Prioritize risk/safety, diagnostic clarity, medication rationale, plan specificity, and documentation durability.
-- Do not invent patient facts.
-- If data gaps exist, state "Needed data point" explicitly.
-- Keep output short and practical for immediate revision.`;
+  const parts: any[] = content.map((file) => ({ inlineData: file }));
+  parts.push({ text: 'Generate the preceptor case review now.' });
+  return parts;
+}
+
+function buildZeliskoInstruction(verbatimPrompt: string): string {
+  return `${verbatimPrompt}\n\n${FORMAT_LOCK}`;
+}
+
+async function generateZeliskoVariant(
+  content: string | { mimeType: string; data: string }[],
+  verbatimPrompt: string,
+  variantLabel: 'v1' | 'v2',
+): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const parts = buildPreceptorParts(content);
+  const response = await withRetry(async () => {
+    return ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: { parts },
+      config: {
+        systemInstruction: buildZeliskoInstruction(verbatimPrompt),
+        temperature: 0.3,
+      },
+    });
+  });
+
+  if (!response?.text) {
+    throw new Error(`Zelisko Super Preceptor ${variantLabel} generation failed.`);
+  }
+
+  return cleanGeneratedText(response.text);
+}
+
+export async function generateZeliskoSuperPreceptorV1(
+  content: string | { mimeType: string; data: string }[],
+): Promise<string> {
+  return generateZeliskoVariant(content, ZELISKO_SUPER_PRECEPTOR_V1, 'v1');
+}
+
+export async function generateZeliskoSuperPreceptorV2(
+  content: string | { mimeType: string; data: string }[],
+): Promise<string> {
+  return generateZeliskoVariant(content, ZELISKO_SUPER_PRECEPTOR_V2, 'v2');
+}
 
 export async function generateZeliskoSuperPreceptorNotes(
   content: string | { mimeType: string; data: string }[],
 ): Promise<{ v1: string; v2: string }> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  let parts: any[];
-  if (typeof content === 'string') {
-    parts = [{ text: content }];
-  } else {
-    parts = content.map((file) => ({ inlineData: file }));
-    parts.push({ text: 'Generate the preceptor case review now.' });
-  }
-
-  const v1Response = await withRetry(async () => {
-    return ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: { parts },
-      config: {
-        systemInstruction: ZELISKO_SUPER_PRECEPTOR_V1,
-        temperature: 0.3,
-      },
-    });
-  });
-
-  if (!v1Response?.text) {
-    throw new Error('Zelisko Super Preceptor v1 generation failed.');
-  }
-
-  const v2Response = await withRetry(async () => {
-    return ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: { parts },
-      config: {
-        systemInstruction: ZELISKO_SUPER_PRECEPTOR_V2,
-        temperature: 0.3,
-      },
-    });
-  });
-
-  if (!v2Response?.text) {
-    throw new Error('Zelisko Super Preceptor v2 generation failed.');
-  }
-
+  const v1 = await generateZeliskoSuperPreceptorV1(content);
+  const v2 = await generateZeliskoSuperPreceptorV2(content);
   return {
-    v1: cleanGeneratedText(v1Response.text),
-    v2: cleanGeneratedText(v2Response.text),
+    v1,
+    v2,
   };
 }
 
@@ -297,33 +328,6 @@ export async function generateV1V2DifferencesExplainer(): Promise<string> {
 
   if (!response?.text) {
     throw new Error('v1/v2 differences explainer generation failed.');
-  }
-
-  return cleanGeneratedText(response.text);
-}
-
-export async function generatePerfectCaseReviewEdits(v1Text: string, v2Text: string): Promise<string> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-  const response = await withRetry(async () => {
-    return ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: {
-        parts: [
-          { text: `Zelisko Super Preceptor v1:\n${v1Text}` },
-          { text: `Zelisko Super Preceptor v2:\n${v2Text}` },
-          { text: 'List the edits needed to make this a perfect case review.' },
-        ],
-      },
-      config: {
-        systemInstruction: PERFECT_CASE_REVIEW_EDITS_INSTRUCTION,
-        temperature: 0.2,
-      },
-    });
-  });
-
-  if (!response?.text) {
-    throw new Error('Perfect case review edits generation failed.');
   }
 
   return cleanGeneratedText(response.text);

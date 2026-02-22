@@ -1,8 +1,8 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  generatePerfectCaseReviewEdits,
   generateV1V2DifferencesExplainer,
-  generateZeliskoSuperPreceptorNotes,
+  generateZeliskoSuperPreceptorV1,
+  generateZeliskoSuperPreceptorV2,
 } from '../services/geminiService';
 import {
   clearStoredDirectoryHandle,
@@ -167,15 +167,14 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
 
         const part = await toBase64Part(row.file);
 
-        updateRow(row.id, { progress: 20, message: 'Generating Zelisko v1 + v2...', v1Progress: 15, v2Progress: 5 });
-        const { v1, v2 } = await generateZeliskoSuperPreceptorNotes([part]);
-        updateRow(row.id, { progress: 45, v1Progress: 100, v2Progress: 100 });
+        updateRow(row.id, { progress: 20, message: 'Generating Zelisko v1...', v1Progress: 15, v2Progress: 0 });
+        const v1 = await generateZeliskoSuperPreceptorV1([part]);
+        updateRow(row.id, { progress: 40, v1Progress: 100, message: 'Generating Zelisko v2...', v2Progress: 20 });
+        const v2 = await generateZeliskoSuperPreceptorV2([part]);
+        updateRow(row.id, { progress: 55, v2Progress: 100 });
 
-        updateRow(row.id, { progress: 55, message: 'Generating v1/v2 differences...' });
+        updateRow(row.id, { progress: 65, message: 'Generating v1/v2 differences...' });
         const differencesExplainer = await generateV1V2DifferencesExplainer();
-
-        updateRow(row.id, { progress: 65, message: 'Generating perfect case review edits...' });
-        const perfectCaseReviewEdits = await generatePerfectCaseReviewEdits(v1, v2);
 
         updateRow(row.id, { progress: 75, message: 'Creating bundle PDF...', pdfProgress: 35 });
         const { doc, filename, pdfBytes } = generateZeliskoBundlePdf({
@@ -183,7 +182,6 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           patientLastName: row.lastName,
           date: new Date(),
           differencesExplainer,
-          perfectCaseReviewEdits,
           v1,
           v2,
         });
@@ -225,7 +223,6 @@ export const PreceptorBatch: React.FC<PreceptorBatchProps> = ({
           preceptorV1Text: v1,
           preceptorV2Text: v2,
           differencesExplainer,
-          perfectCaseReviewEdits,
           title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
         };
         onSaveVaultItem?.(vaultItem);

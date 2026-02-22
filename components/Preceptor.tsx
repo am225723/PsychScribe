@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { Chat } from '@google/genai';
 import {
-  generatePerfectCaseReviewEdits,
   generateV1V2DifferencesExplainer,
-  generateZeliskoSuperPreceptorNotes,
+  generateZeliskoSuperPreceptorV1,
+  generateZeliskoSuperPreceptorV2,
   startZeliskoPreceptorChat,
 } from '../services/geminiService';
 import {
@@ -53,7 +53,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
   const [preceptorV1Text, setPreceptorV1Text] = useState('');
   const [preceptorV2Text, setPreceptorV2Text] = useState('');
   const [differencesExplainer, setDifferencesExplainer] = useState('');
-  const [perfectCaseReviewEdits, setPerfectCaseReviewEdits] = useState('');
   const [activeTab, setActiveTab] = useState(0);
   const [processing, setProcessing] = useState<number>(-1);
   const [error, setError] = useState('');
@@ -85,7 +84,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     const hydratedV1 = initialVaultItem.preceptorV1Text || initialVaultItem.lensReviews?.[0] || initialVaultItem.generatedText || '';
     const hydratedV2 = initialVaultItem.preceptorV2Text || initialVaultItem.lensReviews?.[1] || '';
     const hydratedDiff = initialVaultItem.differencesExplainer || initialVaultItem.lensExplainer || '';
-    const hydratedEdits = initialVaultItem.perfectCaseReviewEdits || '';
 
     setMode('single');
     setFiles([]);
@@ -93,7 +91,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     setPreceptorV1Text(hydratedV1);
     setPreceptorV2Text(hydratedV2);
     setDifferencesExplainer(hydratedDiff);
-    setPerfectCaseReviewEdits(hydratedEdits);
     setPatientFirstInitial((initialVaultItem.patient?.firstInitial || '').toUpperCase().slice(0, 1));
     setPatientLastName(initialVaultItem.patient?.lastName || '');
     setPatientFolderName(
@@ -175,7 +172,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     v1Text: string,
     v2Text: string,
     explainer: string,
-    edits: string,
     sourceText: string,
   ): VaultItem => ({
     id: `preceptor-${Date.now()}`,
@@ -191,7 +187,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     preceptorV1Text: v1Text,
     preceptorV2Text: v2Text,
     differencesExplainer: explainer,
-    perfectCaseReviewEdits: edits,
     title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
   });
 
@@ -199,7 +194,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     v1Input = preceptorV1Text,
     v2Input = preceptorV2Text,
     explainerInput = differencesExplainer,
-    editsInput = perfectCaseReviewEdits,
   ) => {
     if (!v1Input || !v2Input) {
       setExportMessage('Bundle export requires both Zelisko notes (v1 and v2).');
@@ -212,7 +206,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
       patientLastName,
       date: new Date(),
       differencesExplainer: explainerInput,
-      perfectCaseReviewEdits: editsInput,
       v1: v1Input,
       v2: v2Input,
       title: 'Dr. Zelisko — Super Preceptor Case Review Bundle',
@@ -263,32 +256,31 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
 
     try {
       let content: string | { mimeType: string; data: string }[];
+      setProcessing(0);
       if (files.length > 0) {
-        setProcessing(0);
         content = await Promise.all(files.map(readFileAsBase64));
       } else {
         content = textInput;
       }
 
       setProcessing(1);
-      const { v1, v2 } = await generateZeliskoSuperPreceptorNotes(content);
+      const v1 = await generateZeliskoSuperPreceptorV1(content);
 
       setProcessing(2);
-      const explainer = await generateV1V2DifferencesExplainer();
+      const v2 = await generateZeliskoSuperPreceptorV2(content);
 
       setProcessing(3);
-      const edits = await generatePerfectCaseReviewEdits(v1, v2);
+      const explainer = await generateV1V2DifferencesExplainer();
 
       setPreceptorV1Text(v1);
       setPreceptorV2Text(v2);
       setDifferencesExplainer(explainer);
-      setPerfectCaseReviewEdits(edits);
 
       setProcessing(4);
-      await exportBundlePdf(v1, v2, explainer, edits);
+      await exportBundlePdf(v1, v2, explainer);
 
       const sourceText = typeof content === 'string' ? content : '';
-      onSaveVaultItem?.(buildVaultItem(v1, v2, explainer, edits, sourceText));
+      onSaveVaultItem?.(buildVaultItem(v1, v2, explainer, sourceText));
 
       setProcessing(-1);
       setActiveTab(0);
@@ -353,7 +345,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
     setPreceptorV1Text('');
     setPreceptorV2Text('');
     setDifferencesExplainer('');
-    setPerfectCaseReviewEdits('');
     setActiveTab(0);
     setError('');
     setChatMessages([]);
@@ -402,9 +393,9 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
 
   const processingStages = [
     'Preparing Input',
-    'Generating Zelisko v1 + v2',
+    'Generating Zelisko v1',
+    'Generating Zelisko v2',
     'Generating v1/v2 Differences',
-    'Generating Perfect Case Review Edits',
     'Bundle PDF Export',
   ];
 
@@ -448,7 +439,7 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
                 <i className="fa-solid fa-user-graduate text-2xl text-teal-700"></i>
               </div>
               <h2 className="text-xl font-black text-teal-950 uppercase tracking-tight">Generating Zelisko Bundle</h2>
-              <p className="text-xs text-teal-800/40 font-bold uppercase tracking-widest mt-1">v1 + v2 + Differences + Edits + PDF</p>
+              <p className="text-xs text-teal-800/40 font-bold uppercase tracking-widest mt-1">v1 + v2 + Differences + PDF</p>
             </div>
 
             <div className="space-y-4">
@@ -581,13 +572,6 @@ export const Preceptor: React.FC<PreceptorProps> = ({ initialVaultItem, onSaveVa
               <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3">
                 <p className="text-[10px] font-black uppercase tracking-wider text-indigo-700 mb-1">Differences between v1 and v2</p>
                 <div className="text-xs text-indigo-900/80 leading-relaxed">{renderMarkdown(differencesExplainer)}</div>
-              </div>
-            )}
-
-            {perfectCaseReviewEdits && (
-              <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                <p className="text-[10px] font-black uppercase tracking-wider text-amber-700 mb-1">Perfect Case Review Edits</p>
-                <div className="text-xs text-amber-900/80 leading-relaxed">{renderMarkdown(perfectCaseReviewEdits)}</div>
               </div>
             )}
 

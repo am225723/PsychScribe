@@ -10,7 +10,6 @@ type ZeliskoBundleParams = {
   patientLastName: string;
   date: Date;
   differencesExplainer: string;
-  perfectCaseReviewEdits: string;
   v1: string;
   v2: string;
   title?: string;
@@ -133,7 +132,6 @@ export function generateZeliskoBundlePdf(params: ZeliskoBundleParams): {
     patientLastName,
     date,
     differencesExplainer,
-    perfectCaseReviewEdits,
     v1,
     v2,
     title = 'Dr. Zelisko - Super Preceptor Case Review Bundle',
@@ -166,21 +164,7 @@ export function generateZeliskoBundlePdf(params: ZeliskoBundleParams): {
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(26, 26, 26);
-  y = writeWrappedText(doc, formatCaseReviewPdfText(differencesExplainer), y + 2);
-
-  y += 4;
-  y = ensurePageSpace(doc, y, 3);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(HEADER_SIZE);
-  doc.setTextColor(10, 63, 63);
-  doc.text('Perfect Case Review Edits', SIDE_MARGIN, y);
-  y += 4;
-  y = addDivider(doc, y);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(BODY_SIZE);
-  doc.setTextColor(26, 26, 26);
-  writeWrappedText(doc, formatCaseReviewPdfText(perfectCaseReviewEdits || '- None identified.'), y);
+  writeWrappedText(doc, formatCaseReviewPdfText(differencesExplainer), y + 2);
 
   writeSection(doc, 'Zelisko Super Preceptor v1', v1, true);
   writeSection(doc, 'Zelisko Super Preceptor v2', v2, true);
