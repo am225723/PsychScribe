@@ -131,8 +131,28 @@ const App: React.FC = () => {
       }
     };
 
+    const MFA_EXPIRY_MS = 60 * 60 * 1000;
+
+    const isMfaExpired = (): boolean => {
+      const lastVerified = localStorage.getItem('mfa_verified_at');
+      if (!lastVerified) return true;
+      const elapsed = Date.now() - parseInt(lastVerified, 10);
+      return elapsed > MFA_EXPIRY_MS;
+    };
+
     const checkMfa = async (): Promise<AuthState> => {
       try {
+        const { data: factors } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
+        const hasVerifiedTotp = factors?.totp?.some((f: any) => f.status === 'verified');
+
+        if (!hasVerifiedTotp) {
+          return 'authenticated';
+        }
+
+        if (isMfaExpired()) {
+          return 'mfa_challenge';
+        }
+
         const result = await Promise.race([
           supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
@@ -143,12 +163,7 @@ const App: React.FC = () => {
         }
         return 'authenticated';
       } catch {
-        const { data: factors } = await supabase.auth.mfa.listFactors().catch(() => ({ data: null }));
-        const hasVerifiedTotp = factors?.totp?.some((f: any) => f.status === 'verified');
-        if (hasVerifiedTotp) {
-          return 'mfa_challenge';
-        }
-        return 'authenticated';
+        return 'mfa_challenge';
       }
     };
 
@@ -201,6 +216,7 @@ const App: React.FC = () => {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('mfa_verified_at');
     setSession(null);
     setAuthState('unauthenticated');
     setHistory([]);
