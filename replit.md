@@ -134,3 +134,8 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - 2026-02-18: Restructured app with Dashboard home page and 3 document type workspaces
 - 2026-02-18: Added Treatment Plan AI prompt (Headway Clinical Team standards)
 - 2026-02-18: Created reusable DocumentWorkspace component with configurable input tabs
+
+## Document Workspace Features
+- **Per-file document type assignment**: Each uploaded file has checkboxes to assign it to Intake Summary, Treatment Plan, and/or DARP Session Note. Only files tagged for the current report type are sent to the AI.
+- **Patient selector**: Searchable dropdown loads patients from the database. Selecting a patient auto-fills the Client ID field and shows patient details (DOB, email, Client ID badges).
+- Files default to the current workspace's document type when uploaded.

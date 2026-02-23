@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ReportView } from './ReportView';
 import { FileData } from '../types';
 import { ReportTab } from '../App';
 import type { AnalysisMetadata } from '../services/geminiService';
+import { getPatients, getFullName } from '../services/supabaseService';
+import type { Patient } from '../services/supabaseService';
 
 export type DocumentType = 'summary' | 'treatment' | 'darp';
 
@@ -75,6 +77,12 @@ const CONFIG: Record<DocumentType, {
   },
 };
 
+const DOC_TYPE_LABELS: Record<DocumentType, { label: string; color: string; bg: string }> = {
+  summary: { label: 'Intake', color: 'text-teal-700', bg: 'bg-teal-50 border-teal-200' },
+  treatment: { label: 'Treatment', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-200' },
+  darp: { label: 'DARP', color: 'text-sky-700', bg: 'bg-sky-50 border-sky-200' },
+};
+
 export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
   documentType,
   report,
@@ -93,6 +101,45 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [clientId, setClientId] = useState('');
   const [dateOfService, setDateOfService] = useState('');
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [patientSearch, setPatientSearch] = useState('');
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
+  const patientDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getPatients().then(setPatients).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (patientDropdownRef.current && !patientDropdownRef.current.contains(e.target as Node)) {
+        setShowPatientDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredPatients = patients.filter(p => {
+    if (!patientSearch.trim()) return true;
+    const q = patientSearch.toLowerCase();
+    const fullName = getFullName(p).toLowerCase();
+    return fullName.includes(q) || (p.client_id || '').toLowerCase().includes(q);
+  });
+
+  const selectPatient = (patient: Patient) => {
+    setSelectedPatientId(patient.id);
+    setPatientSearch(getFullName(patient));
+    setClientId(patient.client_id || '');
+    setShowPatientDropdown(false);
+  };
+
+  const clearPatientSelection = () => {
+    setSelectedPatientId('');
+    setPatientSearch('');
+    setClientId('');
+  };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = e.target.files;
@@ -108,6 +155,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
             name: selectedFile.name,
             mimeType: selectedFile.type,
             base64: base64,
+            docTypes: { summary: documentType === 'summary', treatment: documentType === 'treatment', darp: documentType === 'darp' },
           });
           resolve();
         };
@@ -120,6 +168,16 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const toggleFileDocType = (fileIndex: number, docType: DocumentType) => {
+    setFiles(prev => prev.map((f, i) => {
+      if (i !== fileIndex) return f;
+      const current = f.docTypes || { summary: false, treatment: false, darp: false };
+      return { ...f, docTypes: { ...current, [docType]: !current[docType] } };
+    }));
+  };
+
+  const filesForCurrentType = files.filter(f => f.docTypes?.[documentType]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const metadata: AnalysisMetadata | undefined = (documentType === 'treatment' || documentType === 'darp') && (clientId.trim() || dateOfService.trim())
@@ -127,8 +185,8 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
       : undefined;
     if (activeTab === 'text' && text.trim()) {
       onProcess(text, metadata);
-    } else if ((activeTab === 'file' || activeTab === 'audio') && files.length > 0) {
-      onProcess(files, metadata);
+    } else if ((activeTab === 'file' || activeTab === 'audio') && filesForCurrentType.length > 0) {
+      onProcess(filesForCurrentType, metadata);
     }
   };
 
@@ -203,6 +261,99 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
 
             <div className="p-6 md:p-12">
               <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="bg-teal-50/30 rounded-[2rem] border border-teal-100/50 p-6 space-y-4 animate-in fade-in duration-300">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-8 h-8 bg-teal-100 rounded-xl flex items-center justify-center">
+                      <i className="fa-solid fa-user-doctor text-teal-700 text-xs"></i>
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/50">Patient Selection</span>
+                  </div>
+                  <div className="relative" ref={patientDropdownRef}>
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={patientSearch}
+                          onChange={(e) => {
+                            setPatientSearch(e.target.value);
+                            setSelectedPatientId('');
+                            setShowPatientDropdown(true);
+                          }}
+                          onFocus={() => setShowPatientDropdown(true)}
+                          placeholder="Search by name or Client ID..."
+                          className="w-full px-5 py-3 rounded-xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15 transition-all pr-10"
+                          disabled={isProcessing}
+                        />
+                        {selectedPatientId && (
+                          <button
+                            type="button"
+                            onClick={clearPatientSelection}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <i className="fa-solid fa-xmark"></i>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    {showPatientDropdown && filteredPatients.length > 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-teal-100 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                        {filteredPatients.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => selectPatient(p)}
+                            className={`w-full text-left px-5 py-3 hover:bg-teal-50 transition-colors flex items-center justify-between gap-3 ${
+                              selectedPatientId === p.id ? 'bg-teal-50' : ''
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <span className="text-sm font-bold text-teal-950 block truncate">{getFullName(p)}</span>
+                              {p.client_id && (
+                                <span className="text-[10px] text-teal-600 font-semibold">ID: {p.client_id}</span>
+                              )}
+                            </div>
+                            {selectedPatientId === p.id && (
+                              <i className="fa-solid fa-check text-teal-600 shrink-0"></i>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {showPatientDropdown && patientSearch.trim() && filteredPatients.length === 0 && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-teal-100 rounded-xl shadow-xl p-4">
+                        <p className="text-xs text-slate-400 font-semibold text-center">No patients found</p>
+                      </div>
+                    )}
+                  </div>
+                  {selectedPatientId && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {(() => {
+                        const p = patients.find(pt => pt.id === selectedPatientId);
+                        if (!p) return null;
+                        return (
+                          <>
+                            {p.client_id && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-lg text-[10px] font-bold text-emerald-700">
+                                <i className="fa-solid fa-id-card"></i> {p.client_id}
+                              </span>
+                            )}
+                            {p.dob && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600">
+                                <i className="fa-solid fa-calendar"></i> DOB: {p.dob}
+                              </span>
+                            )}
+                            {p.email && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600">
+                                <i className="fa-solid fa-envelope"></i> {p.email}
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+
                 {activeTab === 'text' ? (
                   <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
                     <label className="block text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-3 ml-2">Observations & Notes</label>
@@ -237,7 +388,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
                         <i className={`${files.length > 0 ? 'fa-solid fa-check' : (activeTab === 'audio' ? 'fa-solid fa-microphone' : 'fa-solid fa-file-arrow-up')} text-2xl`}></i>
                       </div>
                       <p className="text-lg font-black text-teal-950 uppercase tracking-tight">
-                        {files.length > 0 ? `${files.length} File${files.length > 1 ? 's' : ''} Selected` : getUploadLabel()}
+                        {files.length > 0 ? `${files.length} File${files.length > 1 ? 's' : ''} Uploaded` : getUploadLabel()}
                       </p>
                       <p className="text-teal-800/30 font-bold mt-1 uppercase tracking-[0.2em] text-[10px]">
                         {files.length > 0 ? 'Click to add more' : getUploadHint()}
@@ -245,22 +396,51 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
                     </div>
 
                     {files.length > 0 && (
-                      <div className="space-y-2 mt-3">
+                      <div className="space-y-3 mt-3">
+                        <div className="flex items-center justify-between px-2">
+                          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-800/40">
+                            {filesForCurrentType.length} of {files.length} file{files.length !== 1 ? 's' : ''} assigned to {CONFIG[documentType].title}
+                          </span>
+                        </div>
                         {files.map((f, index) => (
-                          <div key={index} className="flex items-center justify-between bg-teal-50/50 border border-teal-100/50 rounded-2xl px-5 py-3">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-8 h-8 bg-teal-100 rounded-xl flex items-center justify-center shrink-0">
-                                <i className={`fa-solid ${f.mimeType.startsWith('audio/') ? 'fa-waveform' : f.mimeType.startsWith('image/') ? 'fa-image' : 'fa-file-pdf'} text-teal-700 text-xs`}></i>
+                          <div key={index} className="bg-teal-50/50 border border-teal-100/50 rounded-2xl px-5 py-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-8 h-8 bg-teal-100 rounded-xl flex items-center justify-center shrink-0">
+                                  <i className={`fa-solid ${f.mimeType.startsWith('audio/') ? 'fa-waveform' : f.mimeType.startsWith('image/') ? 'fa-image' : 'fa-file-pdf'} text-teal-700 text-xs`}></i>
+                                </div>
+                                <span className="text-xs font-bold text-teal-900 truncate">{f.name}</span>
                               </div>
-                              <span className="text-xs font-bold text-teal-900 truncate">{f.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeFile(index)}
+                                className="text-red-300 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all shrink-0"
+                              >
+                                <i className="fa-solid fa-xmark text-sm"></i>
+                              </button>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => removeFile(index)}
-                              className="text-red-300 hover:text-red-600 hover:bg-red-50 p-2 rounded-xl transition-all shrink-0"
-                            >
-                              <i className="fa-solid fa-xmark text-sm"></i>
-                            </button>
+                            <div className="flex items-center gap-2 pl-11">
+                              <span className="text-[9px] font-bold uppercase tracking-widest text-teal-800/30 mr-1">Use for:</span>
+                              {(Object.keys(DOC_TYPE_LABELS) as DocumentType[]).map((dt) => {
+                                const isChecked = f.docTypes?.[dt] || false;
+                                const label = DOC_TYPE_LABELS[dt];
+                                return (
+                                  <button
+                                    key={dt}
+                                    type="button"
+                                    onClick={() => toggleFileDocType(index, dt)}
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all ${
+                                      isChecked
+                                        ? `${label.bg} ${label.color}`
+                                        : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    <i className={`fa-solid ${isChecked ? 'fa-square-check' : 'fa-square'} text-xs`}></i>
+                                    {label.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         ))}
                         <button
@@ -312,7 +492,7 @@ export const DocumentWorkspace: React.FC<DocumentWorkspaceProps> = ({
 
                 <button
                   type="submit"
-                  disabled={isProcessing || (activeTab === 'text' && !text.trim()) || ((activeTab === 'file' || activeTab === 'audio') && files.length === 0)}
+                  disabled={isProcessing || (activeTab === 'text' && !text.trim()) || ((activeTab === 'file' || activeTab === 'audio') && filesForCurrentType.length === 0)}
                   className={`w-full py-4 md:py-6 rounded-[2rem] font-black text-xs md:text-sm uppercase tracking-[0.2em] text-white shadow-2xl transition-all flex items-center justify-center gap-4 overflow-hidden relative group ${
                     isProcessing
                       ? 'bg-teal-100 cursor-not-allowed text-teal-800/30'
