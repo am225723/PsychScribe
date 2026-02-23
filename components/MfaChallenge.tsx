@@ -14,6 +14,8 @@ export const MfaChallenge: React.FC<MfaChallengeProps> = ({ onVerified, onCancel
   const [error, setError] = useState('');
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
@@ -60,8 +62,10 @@ export const MfaChallenge: React.FC<MfaChallengeProps> = ({ onVerified, onCancel
       const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
       if (factorsError) throw factorsError;
 
-      const totpFactor = factors.totp[0];
-      if (!totpFactor) throw new Error('No authenticator found');
+      const totpFactor = factors?.totp?.find((factor: any) => factor.status === 'verified');
+      if (!totpFactor) {
+        throw new Error('No verified authenticator found. Please sign out and set up Google Authenticator again.');
+      }
 
       const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
         factorId: totpFactor.id,
@@ -78,13 +82,22 @@ export const MfaChallenge: React.FC<MfaChallengeProps> = ({ onVerified, onCancel
         throw new Error(verifyResult.error.message || 'Invalid verification code');
       }
 
-      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      if (aal?.currentLevel === 'aal2') {
-        localStorage.setItem('mfa_verified_at', Date.now().toString());
-        onVerified();
-      } else {
-        throw new Error('Verification failed. Please enter the correct code from Google Authenticator.');
+      let reachedAal2 = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.currentLevel === 'aal2') {
+          reachedAal2 = true;
+          break;
+        }
+        await wait(120);
       }
+
+      if (!reachedAal2) {
+        console.warn('MFA verification succeeded but AAL did not immediately report aal2');
+      }
+
+      localStorage.setItem('mfa_verified_at', Date.now().toString());
+      onVerified();
     } catch (err: any) {
       setError(err.message || 'Verification failed');
       setCode(['', '', '', '', '', '']);

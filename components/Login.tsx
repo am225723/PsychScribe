@@ -13,8 +13,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const isBusy = loading || oauthLoading;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +67,25 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setMessage('');
+    setOauthLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/`,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setError(err.message || 'Google sign-in failed');
+      setOauthLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -110,6 +131,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="doctor@clinic.com"
                 required
+                disabled={isBusy}
                 className="w-full px-5 py-4 rounded-2xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15 transition-all"
               />
             </div>
@@ -122,15 +144,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
                 placeholder="Enter your password"
                 required
                 minLength={6}
+                disabled={isBusy}
                 className="w-full px-5 py-4 rounded-2xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15 transition-all"
               />
             </div>
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={isBusy}
               className={`w-full py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] text-white shadow-2xl transition-all flex items-center justify-center gap-3 ${
-                loading
+                isBusy
                   ? 'bg-teal-300 cursor-not-allowed'
                   : 'bg-teal-900 hover:bg-black hover:-translate-y-1 shadow-teal-900/20 active:translate-y-0'
               }`}
@@ -144,9 +167,37 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
             </button>
           </form>
 
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-teal-100"></div>
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white/80 px-3 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/30">or</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={isBusy}
+            className={`w-full py-4 rounded-[1.4rem] font-black text-xs uppercase tracking-[0.2em] border transition-all flex items-center justify-center gap-3 ${
+              isBusy
+                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-white border-teal-100 text-teal-900 hover:bg-teal-50 hover:-translate-y-0.5'
+            }`}
+          >
+            {oauthLoading ? (
+              <i className="fa-solid fa-circle-notch animate-spin"></i>
+            ) : (
+              <i className="fa-brands fa-google"></i>
+            )}
+            {oauthLoading ? 'Redirecting to Google...' : 'Continue with Google'}
+          </button>
+
           <div className="text-center pt-2">
             <button
               onClick={() => { setIsSignUp(!isSignUp); setError(''); setMessage(''); }}
+              disabled={isBusy}
               className="text-xs font-bold text-teal-600 hover:text-teal-800 transition-colors"
             >
               {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
