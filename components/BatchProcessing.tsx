@@ -33,6 +33,8 @@ type BatchJob = {
   dateOfService?: string;
   steps: Record<BatchDocType, BatchStep>;
   createdAt: string;
+  driveFolderId?: string;
+  driveFolderName?: string;
 };
 
 type CarryForwardOptions = {
@@ -120,7 +122,7 @@ function getOverallJobStatus(job: BatchJob): BatchStepStatus {
   return 'queued';
 }
 
-export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) => {
+export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, onComplete }) => {
   const [jobs, setJobs] = useState<BatchJob[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [carryForward, setCarryForward] = useState<CarryForwardOptions>({
@@ -132,6 +134,12 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
   const [currentJobIndex, setCurrentJobIndex] = useState<number>(0);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [dbPatients, setDbPatients] = useState<Patient[]>([]);
+  const [driveBrowseJobId, setDriveBrowseJobId] = useState<string | null>(null);
+  const [driveFolders, setDriveFolders] = useState<{ id: string; name: string }[]>([]);
+  const [driveFiles, setDriveFiles] = useState<{ id: string; name: string; mimeType: string }[]>([]);
+  const [driveBreadcrumbs, setDriveBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveDownloading, setDriveDownloading] = useState<string | null>(null);
 
   useEffect(() => {
     getPatients().then(setDbPatients).catch(() => {});
@@ -144,6 +152,184 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
   const removeJob = (jobId: string) => {
     if (isRunning) return;
     setJobs((prev) => prev.filter((job) => job.jobId !== jobId));
+  };
+
+  const openDriveBrowser = async (jobId: string) => {
+    if (!accessToken) return;
+    setDriveBrowseJobId(jobId);
+    const startId = localStorage.getItem('drive_patient_folder_id') || 'root';
+    const startName = localStorage.getItem('drive_patient_folder_name') || 'My Drive';
+    setDriveBreadcrumbs([{ id: startId, name: startName }]);
+    await loadDriveFolder(startId);
+  };
+
+  const loadDriveFolder = async (folderId: string) => {
+    if (!accessToken) return;
+    setDriveLoading(true);
+    try {
+      const folderQuery = `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const folderRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(folderQuery)}&fields=files(id,name)&orderBy=name&pageSize=100`,
+        { headers: { Authorization: 'Bearer ' + accessToken } },
+      );
+      const folderData = await folderRes.json();
+      setDriveFolders(folderData.files || []);
+
+      const fileQuery = `'${folderId}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`;
+      const fileRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(fileQuery)}&fields=files(id,name,mimeType)&orderBy=name&pageSize=100`,
+        { headers: { Authorization: 'Bearer ' + accessToken } },
+      );
+      const fileData = await fileRes.json();
+      setDriveFiles(fileData.files || []);
+    } catch (err) {
+      console.error('Failed to load Drive folder', err);
+    } finally {
+      setDriveLoading(false);
+    }
+  };
+
+  const navigateDriveFolder = (folderId: string, folderName: string) => {
+    setDriveBreadcrumbs((prev) => [...prev, { id: folderId, name: folderName }]);
+    loadDriveFolder(folderId);
+  };
+
+  const navigateDriveBreadcrumb = (index: number) => {
+    const crumb = driveBreadcrumbs[index];
+    setDriveBreadcrumbs((prev) => prev.slice(0, index + 1));
+    loadDriveFolder(crumb.id);
+  };
+
+  const downloadDriveFile = async (fileId: string, fileName: string, mimeType: string): Promise<FileData | null> => {
+    if (!accessToken) return null;
+    try {
+      let downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+      if (mimeType === 'application/vnd.google-apps.document') {
+        downloadUrl = `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=application/pdf`;
+        mimeType = 'application/pdf';
+        if (!fileName.endsWith('.pdf')) fileName += '.pdf';
+      } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        return null;
+      }
+
+      const res = await fetch(downloadUrl, {
+        headers: { Authorization: 'Bearer ' + accessToken },
+      });
+      if (!res.ok) throw new Error(`Download failed: ${res.status}`);
+      const blob = await res.blob();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+        reader.onerror = () => reject(new Error('Read failed'));
+        reader.readAsDataURL(blob);
+      });
+      return { name: fileName, mimeType: blob.type || mimeType, base64 };
+    } catch (err) {
+      console.error(`Failed to download ${fileName}:`, err);
+      return null;
+    }
+  };
+
+  const importAllFilesFromDriveFolder = async (jobId: string) => {
+    if (!accessToken || driveFiles.length === 0) return;
+    const currentFolderId = driveBreadcrumbs[driveBreadcrumbs.length - 1]?.id;
+    const currentFolderName = driveBreadcrumbs[driveBreadcrumbs.length - 1]?.name || '';
+
+    setDriveDownloading('all');
+    const downloadedFiles: FileData[] = [];
+
+    for (const file of driveFiles) {
+      const result = await downloadDriveFile(file.id, file.name, file.mimeType);
+      if (result) downloadedFiles.push(result);
+    }
+
+    if (downloadedFiles.length > 0) {
+      const guessed = splitPatientName(currentFolderName.replace(/[_-]+/g, ' '));
+
+      setJobs((prev) =>
+        prev.map((job) => {
+          if (job.jobId !== jobId) return job;
+          const taggedFiles = downloadedFiles.map((f) => ({
+            ...f,
+            docTypes: {
+              summary: job.steps.summary.enabled,
+              treatment: job.steps.treatment.enabled,
+              darp: job.steps.darp.enabled,
+              preceptor: job.steps.preceptor.enabled,
+            },
+          }));
+          return {
+            ...job,
+            source: { ...job.source, files: [...job.source.files, ...taggedFiles], sourceName: currentFolderName },
+            patient: {
+              ...job.patient,
+              firstInitial: job.patient.firstInitial || guessed.firstInitial,
+              lastName: job.patient.lastName || guessed.lastName,
+              folderName: job.patient.folderName || currentFolderName,
+            },
+            driveFolderId: currentFolderId,
+            driveFolderName: currentFolderName,
+          };
+        }),
+      );
+    }
+
+    setDriveDownloading(null);
+    setDriveBrowseJobId(null);
+  };
+
+  const importSingleDriveFile = async (jobId: string, fileId: string, fileName: string, mimeType: string) => {
+    setDriveDownloading(fileId);
+    const result = await downloadDriveFile(fileId, fileName, mimeType);
+    if (result) {
+      setJobs((prev) =>
+        prev.map((job) => {
+          if (job.jobId !== jobId) return job;
+          const taggedFile = {
+            ...result,
+            docTypes: {
+              summary: job.steps.summary.enabled,
+              treatment: job.steps.treatment.enabled,
+              darp: job.steps.darp.enabled,
+              preceptor: job.steps.preceptor.enabled,
+            },
+          };
+          const currentFolderId = driveBreadcrumbs[driveBreadcrumbs.length - 1]?.id;
+          const currentFolderName = driveBreadcrumbs[driveBreadcrumbs.length - 1]?.name || '';
+          return {
+            ...job,
+            source: { ...job.source, files: [...job.source.files, taggedFile] },
+            driveFolderId: job.driveFolderId || currentFolderId,
+            driveFolderName: job.driveFolderName || currentFolderName,
+          };
+        }),
+      );
+    }
+    setDriveDownloading(null);
+  };
+
+  const saveToDriveFolder = async (folderId: string, fileName: string, content: string): Promise<boolean> => {
+    if (!accessToken) return false;
+    try {
+      const blob = new Blob([content], { type: 'text/plain' });
+      const metadata = {
+        name: fileName,
+        mimeType: 'text/plain',
+        parents: [folderId],
+      };
+      const formData = new FormData();
+      formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+      formData.append('file', blob);
+      const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + accessToken },
+        body: formData,
+      });
+      return response.ok;
+    } catch (err) {
+      console.error('Drive save failed:', err);
+      return false;
+    }
   };
 
   const updateJob = (jobId: string, patch: Partial<BatchJob>) => {
@@ -296,6 +482,8 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
         preceptor: createInitialStep(false),
       },
       createdAt: new Date().toISOString(),
+      driveFolderId: sourceJob.driveFolderId,
+      driveFolderName: sourceJob.driveFolderName,
     };
     setJobs((prev) => [...prev, newJob]);
   };
@@ -470,6 +658,21 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
             outputText,
             error: undefined,
           });
+
+          if (job.driveFolderId && stepType !== 'preceptor') {
+            const dateStr = job.dateOfService || new Date().toISOString().split('T')[0];
+            const patientLabel = `${job.patient.firstInitial}${job.patient.lastName ? '_' + job.patient.lastName : ''}`;
+            const docLabel = stepType === 'summary' ? 'CaseSummary' : stepType === 'treatment' ? 'TreatmentPlan' : 'SessionNote';
+            const driveFileName = `${patientLabel}_${docLabel}_${dateStr}.txt`;
+            try {
+              const saved = await saveToDriveFolder(job.driveFolderId, driveFileName, outputText);
+              if (saved) {
+                console.log(`[Batch] Auto-saved ${driveFileName} to Drive folder ${job.driveFolderName}`);
+              }
+            } catch (driveErr) {
+              console.error('Drive auto-save failed (continuing batch):', driveErr);
+            }
+          }
 
           if (stepType === 'summary' || stepType === 'treatment') {
             const generatedFile: FileData = {
@@ -738,23 +941,43 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
               </div>
 
               <div className="space-y-2">
-                <div
-                  onClick={() => fileInputRefs.current[job.jobId]?.click()}
-                  className="border-2 border-dashed border-teal-100 rounded-2xl p-4 text-center cursor-pointer hover:border-teal-300 hover:bg-teal-50/30"
-                >
-                  <input
-                    ref={(el) => {
-                      fileInputRefs.current[job.jobId] = el;
-                    }}
-                    type="file"
-                    multiple
-                    accept=".pdf,image/*,.doc,.docx,.txt,audio/*"
-                    onChange={(e) => handleFilePick(job.jobId, e.target.files)}
-                    className="hidden"
-                  />
-                  <p className="text-xs font-black uppercase tracking-[0.2em] text-teal-800">Add Source Files</p>
-                  <p className="text-[10px] font-bold text-teal-800/40 uppercase tracking-wider mt-1">Upload one or more files per group</p>
+                <div className="flex gap-2">
+                  <div
+                    onClick={() => fileInputRefs.current[job.jobId]?.click()}
+                    className="flex-1 border-2 border-dashed border-teal-100 rounded-2xl p-4 text-center cursor-pointer hover:border-teal-300 hover:bg-teal-50/30"
+                  >
+                    <input
+                      ref={(el) => {
+                        fileInputRefs.current[job.jobId] = el;
+                      }}
+                      type="file"
+                      multiple
+                      accept=".pdf,image/*,.doc,.docx,.txt,audio/*"
+                      onChange={(e) => handleFilePick(job.jobId, e.target.files)}
+                      className="hidden"
+                    />
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-teal-800"><i className="fa-solid fa-upload mr-2"></i>Upload Files</p>
+                    <p className="text-[10px] font-bold text-teal-800/40 uppercase tracking-wider mt-1">From your device</p>
+                  </div>
+                  {accessToken && (
+                    <div
+                      onClick={() => !isRunning && openDriveBrowser(job.jobId)}
+                      className="flex-1 border-2 border-dashed border-blue-100 rounded-2xl p-4 text-center cursor-pointer hover:border-blue-300 hover:bg-blue-50/30"
+                    >
+                      <p className="text-xs font-black uppercase tracking-[0.2em] text-blue-800"><i className="fa-brands fa-google-drive mr-2"></i>Pick from Drive</p>
+                      <p className="text-[10px] font-bold text-blue-800/40 uppercase tracking-wider mt-1">Browse patient folders</p>
+                    </div>
+                  )}
                 </div>
+
+                {job.driveFolderId && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-xl">
+                    <i className="fa-brands fa-google-drive text-blue-600 text-sm"></i>
+                    <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider">
+                      Source: {job.driveFolderName} — reports will auto-save here
+                    </span>
+                  </div>
+                )}
 
                 {job.source.files.length > 0 && (
                   <div className="space-y-2">
@@ -891,6 +1114,123 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
           </button>
         )}
       </div>
+
+      {driveBrowseJobId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setDriveBrowseJobId(null)}>
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-teal-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-[0.2em] text-teal-900">
+                  <i className="fa-brands fa-google-drive mr-2 text-blue-600"></i>
+                  Browse Google Drive
+                </h3>
+                <p className="text-[10px] font-bold text-teal-800/40 uppercase tracking-wider mt-1">
+                  Select files or import all from a folder
+                </p>
+              </div>
+              <button onClick={() => setDriveBrowseJobId(null)} className="text-teal-400 hover:text-teal-700 p-2">
+                <i className="fa-solid fa-xmark text-lg"></i>
+              </button>
+            </div>
+
+            <div className="px-5 py-3 bg-slate-50 border-b border-teal-50 flex items-center gap-1 flex-wrap">
+              {driveBreadcrumbs.map((crumb, idx) => (
+                <React.Fragment key={crumb.id}>
+                  {idx > 0 && <i className="fa-solid fa-chevron-right text-[8px] text-teal-400 mx-1"></i>}
+                  <button
+                    onClick={() => navigateDriveBreadcrumb(idx)}
+                    className={`text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg transition-all ${
+                      idx === driveBreadcrumbs.length - 1 ? 'bg-teal-100 text-teal-800' : 'text-teal-600 hover:bg-teal-50'
+                    }`}
+                  >
+                    {crumb.name}
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-1">
+              {driveLoading ? (
+                <div className="text-center py-10">
+                  <i className="fa-solid fa-spinner fa-spin text-teal-400 text-2xl"></i>
+                  <p className="text-[10px] font-bold text-teal-800/40 uppercase tracking-wider mt-3">Loading...</p>
+                </div>
+              ) : (
+                <>
+                  {driveFolders.map((folder) => (
+                    <button
+                      key={folder.id}
+                      onClick={() => navigateDriveFolder(folder.id, folder.name)}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-teal-50 transition-all text-left"
+                    >
+                      <i className="fa-solid fa-folder text-amber-400 text-lg"></i>
+                      <span className="text-xs font-bold text-teal-900 truncate flex-1">{folder.name}</span>
+                      <i className="fa-solid fa-chevron-right text-[10px] text-teal-300"></i>
+                    </button>
+                  ))}
+
+                  {driveFiles.length > 0 && driveFolders.length > 0 && (
+                    <div className="border-t border-teal-50 my-2"></div>
+                  )}
+
+                  {driveFiles.map((file) => {
+                    const isDownloading = driveDownloading === file.id;
+                    const icon = file.mimeType.includes('pdf') ? 'fa-file-pdf text-red-400' :
+                      file.mimeType.includes('image') ? 'fa-image text-purple-400' :
+                      file.mimeType.includes('audio') ? 'fa-waveform text-blue-400' :
+                      file.mimeType.includes('document') ? 'fa-file-word text-blue-500' :
+                      'fa-file text-teal-400';
+                    return (
+                      <div
+                        key={file.id}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-blue-50 transition-all"
+                      >
+                        <i className={`fa-solid ${icon} text-lg`}></i>
+                        <span className="text-xs font-bold text-teal-900 truncate flex-1">{file.name}</span>
+                        <button
+                          onClick={() => importSingleDriveFile(driveBrowseJobId, file.id, file.name, file.mimeType)}
+                          disabled={isDownloading || driveDownloading === 'all'}
+                          className="text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-all disabled:opacity-50"
+                        >
+                          {isDownloading ? <i className="fa-solid fa-spinner fa-spin"></i> : <><i className="fa-solid fa-plus mr-1"></i>Add</>}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  {driveFolders.length === 0 && driveFiles.length === 0 && (
+                    <div className="text-center py-10">
+                      <p className="text-[10px] font-bold text-teal-800/40 uppercase tracking-wider">This folder is empty</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-teal-100 flex items-center gap-3">
+              {driveFiles.length > 0 && (
+                <button
+                  onClick={() => importAllFilesFromDriveFolder(driveBrowseJobId)}
+                  disabled={driveDownloading !== null}
+                  className="flex-1 py-3 rounded-2xl font-black text-[10px] uppercase tracking-[0.15em] bg-blue-600 text-white hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {driveDownloading === 'all' ? (
+                    <><i className="fa-solid fa-spinner fa-spin"></i> Downloading...</>
+                  ) : (
+                    <><i className="fa-solid fa-download"></i> Import All {driveFiles.length} File{driveFiles.length !== 1 ? 's' : ''}</>
+                  )}
+                </button>
+              )}
+              <button
+                onClick={() => setDriveBrowseJobId(null)}
+                className="px-5 py-3 rounded-2xl font-black text-[10px] uppercase tracking-wider text-teal-600 hover:bg-teal-50 border border-teal-200 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

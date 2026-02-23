@@ -112,6 +112,9 @@ PsychScribe AI (Dr. Zelisko Intake) is a clinical synthesis engine for integrati
 - Quick-suggestion buttons in chat for common actions
 
 ## Recent Changes
+- 2026-02-23: Added Google Drive browser to Batch Processing — browse patient folders, import files, auto-save generated reports back to source folder
+- 2026-02-23: Batch processing cascades generated outputs: Summary → feeds into Treatment Plan, Treatment Plan → feeds into DARP as tagged files
+- 2026-02-23: Enhanced CSV import with detailed per-patient error reporting (error codes, step-level logging)
 - 2026-02-22: Split patient name into first_name/last_name, added email and phone fields, removed date added column
 - 2026-02-22: Added 60-minute MFA session expiry for enhanced security
 - 2026-02-21: Added Patient Database page (/patients) with list, search, add/edit, delete, and CSV import
