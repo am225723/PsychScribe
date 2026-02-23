@@ -17,7 +17,7 @@ UPDATE patients SET
   END
 WHERE first_name IS NULL;
 
-ALTER TABLE patients ALTER COLUMN first_name SET NOT NULL;
+ALTER TABLE patients ALTER COLUMN first_name SET NOT NULL;  
 
 CREATE INDEX IF NOT EXISTS idx_patients_first_name ON patients(first_name);
 CREATE INDEX IF NOT EXISTS idx_patients_last_name ON patients(last_name);
