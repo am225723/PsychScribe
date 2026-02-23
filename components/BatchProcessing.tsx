@@ -470,6 +470,37 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
             outputText,
             error: undefined,
           });
+
+          if (stepType === 'summary' || stepType === 'treatment') {
+            const generatedFile: FileData = {
+              name: stepType === 'summary' ? 'Generated Case Summary.txt' : 'Generated Treatment Plan.txt',
+              mimeType: 'text/plain',
+              base64: btoa(unescape(encodeURIComponent(outputText))),
+              docTypes: {
+                summary: false,
+                treatment: stepType === 'summary',
+                darp: stepType === 'treatment',
+                preceptor: false,
+              },
+            };
+
+            setJobs((prev) =>
+              prev.map((j) => {
+                if (j.jobId !== job.jobId) return j;
+                const alreadyHas = j.source.files.some((f) => f.name === generatedFile.name);
+                if (alreadyHas) return j;
+                return {
+                  ...j,
+                  source: {
+                    ...j.source,
+                    files: [...j.source.files, generatedFile],
+                  },
+                };
+              }),
+            );
+
+            job.source.files = [...job.source.files, generatedFile];
+          }
         } catch (error: any) {
           jobFailed = true;
           updateStep(job.jobId, stepType, {
