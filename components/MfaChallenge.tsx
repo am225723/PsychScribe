@@ -68,18 +68,22 @@ export const MfaChallenge: React.FC<MfaChallengeProps> = ({ onVerified, onCancel
       });
       if (challengeError) throw challengeError;
 
-      const { error: verifyError } = await supabase.auth.mfa.verify({
+      const verifyResult = await supabase.auth.mfa.verify({
         factorId: totpFactor.id,
         challengeId: challenge.id,
         code: fullCode,
       });
-      if (verifyError) throw verifyError;
+
+      if (verifyResult.error) {
+        throw new Error(verifyResult.error.message || 'Invalid verification code');
+      }
 
       const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
       if (aal?.currentLevel === 'aal2') {
+        localStorage.setItem('mfa_verified_at', Date.now().toString());
         onVerified();
       } else {
-        throw new Error('Verification succeeded but session was not upgraded. Please try again.');
+        throw new Error('Verification failed. Please enter the correct code from Google Authenticator.');
       }
     } catch (err: any) {
       setError(err.message || 'Verification failed');

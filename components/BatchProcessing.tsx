@@ -279,9 +279,8 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
   const selectPatientForJob = (jobId: string, patientId: string) => {
     const patient = dbPatients.find((p) => p.id === patientId);
     if (!patient) return;
-    const nameParts = patient.full_name.split(/\s+/).filter(Boolean);
-    const firstInitial = nameParts[0]?.[0]?.toUpperCase() || '';
-    const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : nameParts[0] || '';
+    const firstInitial = patient.first_name?.[0]?.toUpperCase() || '';
+    const lastName = patient.last_name || patient.first_name || '';
     setJobs((prev) =>
       prev.map((job) =>
         job.jobId === jobId
@@ -632,7 +631,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                     <option value="">— Pick a patient to auto-fill fields —</option>
                     {dbPatients.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.full_name}{p.client_id ? ` (${p.client_id})` : ''}
+                        {p.first_name} {p.last_name}{p.client_id ? ` (${p.client_id})` : ''}
                       </option>
                     ))}
                   </select>

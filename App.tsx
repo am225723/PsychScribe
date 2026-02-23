@@ -64,7 +64,7 @@ function reportToHistoryItem(report: Report): ReportHistoryItem {
   const patient = report.patient;
   return {
     id: report.id,
-    patientName: patient?.full_name || 'Unknown Patient',
+    patientName: patient ? `${patient.first_name} ${patient.last_name}`.trim() : 'Unknown Patient',
     initials: patient?.initials || 'XX',
     date: new Date(report.created_at).toLocaleDateString(),
     content: report.content,
@@ -76,7 +76,7 @@ function reportToHistoryItem(report: Report): ReportHistoryItem {
 function reportToVaultItem(report: Report): VaultItem {
   const patient = report.patient;
   const firstInitial = patient?.initials?.[0]?.toUpperCase() || '';
-  const lastName = patient?.full_name?.split(/\s+/).filter(Boolean).pop() || '';
+  const lastName = patient?.last_name || '';
 
   return {
     id: `db-${report.id}`,
@@ -119,64 +119,76 @@ const App: React.FC = () => {
   const [tokenClient, setTokenClient] = useState<any>(null);
 
   useEffect(() => {
-    let handled = false;
+    const MFA_EXPIRY_MS = 60 * 60 * 1000;
 
-    const resolve = (state: AuthState, sess?: any) => {
-      if (sess !== undefined) setSession(sess);
-      if (!handled) {
-        handled = true;
-        setAuthState(state);
-      } else {
-        setAuthState(state);
-      }
+    const isMfaExpired = (): boolean => {
+      const lastVerified = localStorage.getItem('mfa_verified_at');
+      if (!lastVerified) return true;
+      const elapsed = Date.now() - parseInt(lastVerified, 10);
+      return elapsed > MFA_EXPIRY_MS;
     };
 
     const checkMfa = async (): Promise<AuthState> => {
       try {
-        const result = await Promise.race([
-          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
-        ]);
-        const aal = (result as any)?.data;
-        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        const hasVerifiedTotp = factors?.totp?.some((f: any) => f.status === 'verified');
+
+        if (!hasVerifiedTotp) {
+          return 'authenticated';
+        }
+
+        if (isMfaExpired()) {
           return 'mfa_challenge';
         }
-        return 'authenticated';
+
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.currentLevel === 'aal2') {
+          return 'authenticated';
+        }
+        return 'mfa_challenge';
       } catch {
-        return 'authenticated';
+        return 'mfa_challenge';
+      }
+    };
+
+    let initDone = false;
+
+    const resolveAuth = async (newSession: any) => {
+      if (newSession) {
+        setSession(newSession);
+        const mfaState = await checkMfa();
+        setAuthState(mfaState);
+      } else {
+        setSession(null);
+        setAuthState('unauthenticated');
       }
     };
 
     const init = async () => {
       try {
-        const sessionResult = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-        ]);
-        const currentSession = (sessionResult as any)?.data?.session;
-        if (!currentSession) {
-          resolve('unauthenticated');
-          return;
-        }
-        setSession(currentSession);
-        const mfaState = await checkMfa();
-        resolve(mfaState);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const currentSession = sessionData?.session;
+        initDone = true;
+        await resolveAuth(currentSession);
       } catch {
-        resolve('unauthenticated');
+        initDone = true;
+        setAuthState('unauthenticated');
       }
     };
-    init();
+
+    const initTimeout = setTimeout(() => {
+      if (!initDone) {
+        initDone = true;
+        setAuthState('unauthenticated');
+      }
+    }, 8000);
+
+    init().finally(() => clearTimeout(initTimeout));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      if (!newSession) {
-        resolve('unauthenticated', null);
-        return;
-      }
-      setSession(newSession);
-      if (_event === 'SIGNED_IN' || _event === 'TOKEN_REFRESHED' || _event === 'INITIAL_SESSION') {
-        const mfaState = await checkMfa();
-        resolve(mfaState);
-      }
+      if (_event === 'INITIAL_SESSION') return;
+      if (!initDone && _event === 'TOKEN_REFRESHED') return;
+      await resolveAuth(newSession);
     });
 
     return () => {
@@ -184,18 +196,13 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleLoginSuccess = async () => {
-    const { data: factors } = await supabase.auth.mfa.listFactors();
-    const hasVerifiedTotp = factors?.totp?.some(f => f.status === 'verified');
-    if (!hasVerifiedTotp) {
-      setAuthState('mfa_enroll_prompt');
-    } else {
-      setAuthState('authenticated');
-    }
+  const handleLoginSuccess = () => {
+    setAuthState('authenticated');
   };
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('mfa_verified_at');
     setSession(null);
     setAuthState('unauthenticated');
     setHistory([]);

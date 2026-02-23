@@ -7,12 +7,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export interface Patient {
   id: string;
-  full_name: string;
+  first_name: string;
+  last_name: string;
   initials: string;
   dob?: string;
   client_id?: string;
+  email?: string;
+  phone?: string;
   created_at: string;
   updated_at: string;
+}
+
+export function getFullName(patient: Patient): string {
+  return `${patient.first_name} ${patient.last_name}`.trim();
 }
 
 export interface Report {
@@ -25,20 +32,29 @@ export interface Report {
   patient?: Patient;
 }
 
-function extractInitials(name: string): string {
-  const parts = name.split(' ').filter(n => n.length > 0);
-  if (parts.length === 0) return 'XX';
-  const first = parts[0][0]?.toUpperCase() || 'X';
-  const last = parts.length > 1 ? parts[parts.length - 1][0].toUpperCase() : 'X';
+function extractInitials(firstName: string, lastName: string): string {
+  const first = firstName.trim()[0]?.toUpperCase() || 'X';
+  const last = lastName.trim()[0]?.toUpperCase() || 'X';
   return first + last;
+}
+
+function splitFullName(fullName: string): { first_name: string; last_name: string } {
+  const parts = fullName.trim().split(/\s+/).filter(n => n.length > 0);
+  if (parts.length === 0) return { first_name: '', last_name: '' };
+  if (parts.length === 1) return { first_name: parts[0], last_name: '' };
+  const last = parts.pop()!;
+  return { first_name: parts.join(' '), last_name: last };
 }
 
 export async function findOrCreatePatient(fullName: string, dob?: string, clientId?: string): Promise<Patient> {
   const cleanName = fullName.replace(/\*+/g, '').trim();
+  const { first_name, last_name } = splitFullName(cleanName);
+
   const { data: existing } = await supabase
     .from('patients')
     .select('*')
-    .ilike('full_name', cleanName)
+    .ilike('first_name', first_name)
+    .ilike('last_name', last_name)
     .limit(1);
 
   if (existing && existing.length > 0) {
@@ -59,8 +75,9 @@ export async function findOrCreatePatient(fullName: string, dob?: string, client
   const { data: created, error } = await supabase
     .from('patients')
     .insert({
-      full_name: cleanName,
-      initials: extractInitials(cleanName),
+      first_name,
+      last_name,
+      initials: extractInitials(first_name, last_name),
       dob: dob || null,
       client_id: clientId || null,
     })
@@ -125,15 +142,20 @@ export async function getReports(filters?: {
 
   if (filters?.searchQuery) {
     const q = filters.searchQuery.toLowerCase();
-    results = results.filter((r: any) =>
-      r.patient?.full_name?.toLowerCase().includes(q)
-    );
+    results = results.filter((r: any) => {
+      const p = r.patient;
+      if (!p) return false;
+      const fullName = `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase();
+      return fullName.includes(q);
+    });
   }
 
   if (filters?.sortBy === 'name') {
-    results.sort((a: any, b: any) =>
-      (a.patient?.full_name || '').localeCompare(b.patient?.full_name || '')
-    );
+    results.sort((a: any, b: any) => {
+      const nameA = `${a.patient?.last_name || ''} ${a.patient?.first_name || ''}`;
+      const nameB = `${b.patient?.last_name || ''} ${b.patient?.first_name || ''}`;
+      return nameA.localeCompare(nameB);
+    });
   }
 
   return results;
@@ -175,14 +197,19 @@ export async function deletePatient(patientId: string): Promise<void> {
   if (error) throw new Error(`Failed to delete patient: ${error.message}`);
 }
 
-export async function updatePatient(patientId: string, updates: { full_name?: string; dob?: string; client_id?: string }): Promise<Patient> {
+export async function updatePatient(patientId: string, updates: { first_name?: string; last_name?: string; dob?: string; client_id?: string; email?: string; phone?: string }): Promise<Patient> {
   const patch: Record<string, any> = { updated_at: new Date().toISOString() };
-  if (updates.full_name !== undefined) {
-    patch.full_name = updates.full_name.trim();
-    patch.initials = extractInitials(updates.full_name.trim());
+  if (updates.first_name !== undefined) patch.first_name = updates.first_name.trim();
+  if (updates.last_name !== undefined) patch.last_name = updates.last_name.trim();
+  if (updates.first_name !== undefined || updates.last_name !== undefined) {
+    const fn = updates.first_name ?? '';
+    const ln = updates.last_name ?? '';
+    patch.initials = extractInitials(fn, ln);
   }
   if (updates.dob !== undefined) patch.dob = updates.dob || null;
   if (updates.client_id !== undefined) patch.client_id = updates.client_id || null;
+  if (updates.email !== undefined) patch.email = updates.email || null;
+  if (updates.phone !== undefined) patch.phone = updates.phone || null;
 
   const { data, error } = await supabase
     .from('patients')
@@ -195,15 +222,19 @@ export async function updatePatient(patientId: string, updates: { full_name?: st
   return data!;
 }
 
-export async function createPatient(fullName: string, dob?: string, clientId?: string): Promise<Patient> {
-  const cleanName = fullName.replace(/\*+/g, '').trim();
+export async function createPatient(firstName: string, lastName: string, dob?: string, clientId?: string, email?: string, phone?: string): Promise<Patient> {
+  const cleanFirst = firstName.replace(/\*+/g, '').trim();
+  const cleanLast = lastName.replace(/\*+/g, '').trim();
   const { data, error } = await supabase
     .from('patients')
     .insert({
-      full_name: cleanName,
-      initials: extractInitials(cleanName),
+      first_name: cleanFirst,
+      last_name: cleanLast,
+      initials: extractInitials(cleanFirst, cleanLast),
       dob: dob || null,
       client_id: clientId || null,
+      email: email || null,
+      phone: phone || null,
     })
     .select()
     .single();
@@ -244,32 +275,62 @@ export async function mergePatients(primaryId: string, secondaryIds: string[]): 
   return { movedReports };
 }
 
-export async function importPatients(patients: { full_name: string; dob?: string; client_id?: string }[]): Promise<number> {
+export async function importPatients(patients: { first_name: string; last_name: string; dob?: string; client_id?: string; email?: string; phone?: string }[]): Promise<number> {
   let imported = 0;
+  const errors: string[] = [];
+
   for (const p of patients) {
-    const cleanName = p.full_name.replace(/\*+/g, '').trim();
-    if (!cleanName) continue;
+    const cleanFirst = p.first_name.replace(/\*+/g, '').trim();
+    const cleanLast = p.last_name.replace(/\*+/g, '').trim();
+    if (!cleanFirst && !cleanLast) continue;
 
-    const { data: existing } = await supabase
-      .from('patients')
-      .select('id')
-      .ilike('full_name', cleanName)
-      .limit(1);
+    try {
+      const { data: existing, error: selectError } = await supabase
+        .from('patients')
+        .select('id')
+        .ilike('first_name', cleanFirst)
+        .ilike('last_name', cleanLast)
+        .limit(1);
 
-    if (existing && existing.length > 0) {
-      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
-      if (p.dob) updates.dob = p.dob;
-      if (p.client_id) updates.client_id = p.client_id;
-      await supabase.from('patients').update(updates).eq('id', existing[0].id);
-    } else {
-      await supabase.from('patients').insert({
-        full_name: cleanName,
-        initials: extractInitials(cleanName),
-        dob: p.dob || null,
-        client_id: p.client_id || null,
-      });
+      if (selectError) {
+        errors.push(`Lookup failed for ${cleanFirst} ${cleanLast}: ${selectError.message}`);
+        continue;
+      }
+
+      if (existing && existing.length > 0) {
+        const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+        if (p.dob) updates.dob = p.dob;
+        if (p.client_id) updates.client_id = p.client_id;
+        if (p.email) updates.email = p.email;
+        if (p.phone) updates.phone = p.phone;
+        const { error: updateError } = await supabase.from('patients').update(updates).eq('id', existing[0].id);
+        if (updateError) {
+          errors.push(`Update failed for ${cleanFirst} ${cleanLast}: ${updateError.message}`);
+          continue;
+        }
+      } else {
+        const { error: insertError } = await supabase.from('patients').insert({
+          first_name: cleanFirst,
+          last_name: cleanLast,
+          initials: extractInitials(cleanFirst, cleanLast),
+          dob: p.dob || null,
+          client_id: p.client_id || null,
+          email: p.email || null,
+          phone: p.phone || null,
+        });
+        if (insertError) {
+          errors.push(`Insert failed for ${cleanFirst} ${cleanLast}: ${insertError.message}`);
+          continue;
+        }
+      }
+      imported++;
+    } catch (err: any) {
+      errors.push(`${cleanFirst} ${cleanLast}: ${err.message}`);
     }
-    imported++;
+  }
+
+  if (errors.length > 0 && imported === 0) {
+    throw new Error(errors[0]);
   }
   return imported;
 }

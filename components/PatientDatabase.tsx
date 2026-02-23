@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { getPatients, createPatient, updatePatient, deletePatient, importPatients, mergePatients } from '../services/supabaseService';
+import { getPatients, createPatient, updatePatient, deletePatient, importPatients, mergePatients, getFullName } from '../services/supabaseService';
 import type { Patient } from '../services/supabaseService';
 
 export const PatientDatabase: React.FC = () => {
@@ -8,9 +8,12 @@ export const PatientDatabase: React.FC = () => {
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
-  const [formName, setFormName] = useState('');
+  const [formFirstName, setFormFirstName] = useState('');
+  const [formLastName, setFormLastName] = useState('');
   const [formClientId, setFormClientId] = useState('');
   const [formDob, setFormDob] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formPhone, setFormPhone] = useState('');
   const [formError, setFormError] = useState('');
   const [formSaving, setFormSaving] = useState(false);
   const [importMessage, setImportMessage] = useState('');
@@ -42,35 +45,43 @@ export const PatientDatabase: React.FC = () => {
 
   const filtered = patients.filter(p => {
     const q = search.toLowerCase();
+    const fullName = getFullName(p).toLowerCase();
     return (
-      p.full_name.toLowerCase().includes(q) ||
+      fullName.includes(q) ||
       (p.client_id || '').toLowerCase().includes(q) ||
-      (p.dob || '').includes(q)
+      (p.email || '').toLowerCase().includes(q) ||
+      (p.phone || '').includes(q)
     );
   });
 
   const openAddForm = () => {
     setEditingPatient(null);
-    setFormName('');
+    setFormFirstName('');
+    setFormLastName('');
     setFormClientId('');
     setFormDob('');
+    setFormEmail('');
+    setFormPhone('');
     setFormError('');
     setShowForm(true);
   };
 
   const openEditForm = (patient: Patient) => {
     setEditingPatient(patient);
-    setFormName(patient.full_name);
+    setFormFirstName(patient.first_name);
+    setFormLastName(patient.last_name);
     setFormClientId(patient.client_id || '');
     setFormDob(patient.dob || '');
+    setFormEmail(patient.email || '');
+    setFormPhone(patient.phone || '');
     setFormError('');
     setShowForm(true);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formName.trim()) {
-      setFormError('Patient name is required.');
+    if (!formFirstName.trim() || !formLastName.trim()) {
+      setFormError('First name and last name are required.');
       return;
     }
     setFormSaving(true);
@@ -79,12 +90,15 @@ export const PatientDatabase: React.FC = () => {
     try {
       if (editingPatient) {
         await updatePatient(editingPatient.id, {
-          full_name: formName,
+          first_name: formFirstName,
+          last_name: formLastName,
           client_id: formClientId,
           dob: formDob,
+          email: formEmail,
+          phone: formPhone,
         });
       } else {
-        await createPatient(formName, formDob, formClientId);
+        await createPatient(formFirstName, formLastName, formDob, formClientId, formEmail, formPhone);
       }
       setShowForm(false);
       await loadPatients();
@@ -170,25 +184,63 @@ export const PatientDatabase: React.FC = () => {
         return;
       }
 
-      const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
-      const nameIdx = header.findIndex(h => h.includes('name') || h === 'full_name' || h === 'patient');
-      const idIdx = header.findIndex(h => h.includes('client') || h.includes('id') || h === 'client_id');
+      const header = lines[0].toLowerCase().split(',').map(h => h.trim().replace(/["\ufeff]/g, ''));
+      let firstNameIdx = header.findIndex(h => h === 'first_name' || h === 'first name' || h === 'firstname');
+      let lastNameIdx = header.findIndex(h => h === 'last_name' || h === 'last name' || h === 'lastname');
+      const fullNameIdx = header.findIndex(h => h.includes('name') || h === 'full_name' || h === 'patient');
+      const idIdx = header.findIndex(h => h.includes('client') || h === 'client_id');
       const dobIdx = header.findIndex(h => h.includes('dob') || h.includes('birth') || h.includes('date_of_birth'));
+      const emailIdx = header.findIndex(h => h.includes('email'));
+      const phoneIdx = header.findIndex(h => h.includes('phone') || h.includes('mobile') || h.includes('cell'));
 
-      if (nameIdx === -1) {
-        setImportMessage('CSV must have a column with "name" in the header (e.g., "Name", "Full Name", "Patient").');
+      if (firstNameIdx === -1 && lastNameIdx === -1 && fullNameIdx !== -1) {
+        const firstDataRow = lines[1]?.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+        if (firstDataRow && firstDataRow.length > fullNameIdx + 1) {
+          const nextHeader = header[fullNameIdx + 1] || '';
+          const nextValue = firstDataRow[fullNameIdx + 1] || '';
+          if ((nextHeader === '' || nextHeader === 'last name' || nextHeader === 'last_name' || nextHeader === 'lastname') && nextValue && !nextValue.includes('@') && !nextValue.includes('/') && !nextValue.match(/^\(\d/)) {
+            firstNameIdx = fullNameIdx;
+            lastNameIdx = fullNameIdx + 1;
+          }
+        }
+      }
+
+      const hasFirstLast = firstNameIdx !== -1 && lastNameIdx !== -1;
+      if (!hasFirstLast && fullNameIdx === -1) {
+        setImportMessage('CSV must have "First Name" and "Last Name" columns, or a "Name" / "Full Name" column.');
         return;
       }
 
-      const records: { full_name: string; dob?: string; client_id?: string }[] = [];
+      const records: { first_name: string; last_name: string; dob?: string; client_id?: string; email?: string; phone?: string }[] = [];
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-        const name = cols[nameIdx];
-        if (!name) continue;
+        let firstName = '';
+        let lastName = '';
+
+        if (hasFirstLast) {
+          firstName = cols[firstNameIdx] || '';
+          lastName = cols[lastNameIdx] || '';
+        } else {
+          const fullName = cols[fullNameIdx] || '';
+          const parts = fullName.trim().split(/\s+/).filter(Boolean);
+          if (parts.length === 0) continue;
+          if (parts.length === 1) {
+            firstName = parts[0];
+            lastName = '';
+          } else {
+            lastName = parts.pop()!;
+            firstName = parts.join(' ');
+          }
+        }
+
+        if (!firstName && !lastName) continue;
         records.push({
-          full_name: name,
+          first_name: firstName,
+          last_name: lastName,
           client_id: idIdx >= 0 ? cols[idIdx] : undefined,
           dob: dobIdx >= 0 ? cols[dobIdx] : undefined,
+          email: emailIdx >= 0 ? cols[emailIdx] : undefined,
+          phone: phoneIdx >= 0 ? cols[phoneIdx] : undefined,
         });
       }
 
@@ -201,6 +253,7 @@ export const PatientDatabase: React.FC = () => {
       setImportMessage(`Successfully imported ${count} patient${count !== 1 ? 's' : ''}.`);
       await loadPatients();
     } catch (err: any) {
+      console.error('CSV import error:', err);
       setImportMessage(`Import failed: ${err.message}`);
     } finally {
       setImporting(false);
@@ -225,7 +278,7 @@ export const PatientDatabase: React.FC = () => {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, client ID, or DOB..."
+            placeholder="Search by name, client ID, email, or phone..."
             className="w-full pl-11 pr-4 py-3 rounded-2xl border border-teal-100 bg-white focus:ring-4 focus:ring-teal-50 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15"
           />
         </div>
@@ -332,7 +385,7 @@ export const PatientDatabase: React.FC = () => {
                       {mergePrimaryId === p.id ? <i className="fa-solid fa-crown text-xs"></i> : p.initials}
                     </div>
                     <div className="flex-grow min-w-0">
-                      <span className="text-sm font-bold text-indigo-950 block truncate">{p.full_name}</span>
+                      <span className="text-sm font-bold text-indigo-950 block truncate">{getFullName(p)}</span>
                       <span className="text-[9px] font-bold text-indigo-600/50 uppercase">
                         {mergePrimaryId === p.id ? 'Primary — will be kept' : 'Will be merged into primary'}
                       </span>
@@ -350,13 +403,13 @@ export const PatientDatabase: React.FC = () => {
                       className="w-full py-3 rounded-xl bg-indigo-600 text-white font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
                     >
                       <i className="fa-solid fa-code-merge"></i>
-                      Merge {mergeSelected.size - 1} Patient{mergeSelected.size - 1 !== 1 ? 's' : ''} into {primaryPatient?.full_name}
+                      Merge {mergeSelected.size - 1} Patient{mergeSelected.size - 1 !== 1 ? 's' : ''} into {primaryPatient ? getFullName(primaryPatient) : ''}
                     </button>
                   ) : (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
                       <p className="text-xs font-bold text-red-800">
                         <i className="fa-solid fa-triangle-exclamation mr-1"></i>
-                        This will permanently delete {mergeSelected.size - 1} patient record{mergeSelected.size - 1 !== 1 ? 's' : ''} and move all their reports to <strong>{primaryPatient?.full_name}</strong>. This cannot be undone.
+                        This will permanently delete {mergeSelected.size - 1} patient record{mergeSelected.size - 1 !== 1 ? 's' : ''} and move all their reports to <strong>{primaryPatient ? getFullName(primaryPatient) : ''}</strong>. This cannot be undone.
                       </p>
                       <div className="flex gap-2">
                         <button
@@ -401,14 +454,25 @@ export const PatientDatabase: React.FC = () => {
               <i className="fa-solid fa-xmark text-lg"></i>
             </button>
           </div>
-          <form onSubmit={handleFormSubmit} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <form onSubmit={handleFormSubmit} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-1">Full Name *</label>
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-1">First Name *</label>
               <input
                 type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder="John Doe"
+                value={formFirstName}
+                onChange={(e) => setFormFirstName(e.target.value)}
+                placeholder="John"
+                required
+                className="w-full px-4 py-3 rounded-xl border border-teal-100 bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-1">Last Name *</label>
+              <input
+                type="text"
+                value={formLastName}
+                onChange={(e) => setFormLastName(e.target.value)}
+                placeholder="Doe"
                 required
                 className="w-full px-4 py-3 rounded-xl border border-teal-100 bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15"
               />
@@ -432,13 +496,33 @@ export const PatientDatabase: React.FC = () => {
                 className="w-full px-4 py-3 rounded-xl border border-teal-100 bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm"
               />
             </div>
+            <div>
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-1">Email</label>
+              <input
+                type="email"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder="john@example.com"
+                className="w-full px-4 py-3 rounded-xl border border-teal-100 bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15"
+              />
+            </div>
+            <div>
+              <label className="block text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40 mb-2 ml-1">Phone</label>
+              <input
+                type="tel"
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+                placeholder="(555) 123-4567"
+                className="w-full px-4 py-3 rounded-xl border border-teal-100 bg-white focus:ring-2 focus:ring-teal-100 focus:border-teal-200 outline-none text-teal-950 font-bold text-sm placeholder:text-teal-800/15"
+              />
+            </div>
             {formError && (
-              <div className="sm:col-span-3 bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
+              <div className="sm:col-span-2 lg:col-span-3 bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
                 <i className="fa-solid fa-circle-exclamation text-red-500 text-xs"></i>
                 <span className="text-xs font-bold text-red-700">{formError}</span>
               </div>
             )}
-            <div className="sm:col-span-3 flex justify-end gap-2">
+            <div className="sm:col-span-2 lg:col-span-3 flex justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
@@ -487,8 +571,8 @@ export const PatientDatabase: React.FC = () => {
                   )}
                   <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Name</th>
                   <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Client ID</th>
-                  <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">DOB</th>
-                  <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Added</th>
+                  <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Email</th>
+                  <th className="text-left px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Phone</th>
                   <th className="text-right px-6 py-4 text-[9px] font-black uppercase tracking-[0.2em] text-teal-800/40">Actions</th>
                 </tr>
               </thead>
@@ -521,19 +605,17 @@ export const PatientDatabase: React.FC = () => {
                             : patient.initials
                           }
                         </div>
-                        <span className="font-bold text-sm text-teal-950">{patient.full_name}</span>
+                        <span className="font-bold text-sm text-teal-950">{getFullName(patient)}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="text-sm text-slate-600 font-medium">{patient.client_id || '—'}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="text-sm text-slate-600 font-medium">{patient.dob || '—'}</span>
+                      <span className="text-sm text-slate-600 font-medium">{patient.email || '—'}</span>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="text-xs text-slate-400 font-medium">
-                        {new Date(patient.created_at).toLocaleDateString()}
-                      </span>
+                      <span className="text-sm text-slate-600 font-medium">{patient.phone || '—'}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -591,17 +673,18 @@ export const PatientDatabase: React.FC = () => {
       <div className="mt-6 bg-slate-50 rounded-2xl p-5">
         <p className="text-[9px] font-black uppercase tracking-widest text-teal-800/40 mb-2">CSV Import Format</p>
         <p className="text-xs text-slate-500 leading-relaxed">
-          Your CSV file should have a header row. The system will look for columns containing
-          <strong className="text-teal-800"> "name"</strong> (required),
-          <strong className="text-teal-800"> "client" or "id"</strong> (for client ID), and
-          <strong className="text-teal-800"> "dob" or "birth"</strong> (for date of birth).
+          Your CSV file should have a header row. The system will look for columns:
+          <strong className="text-teal-800"> "First Name"</strong> and <strong className="text-teal-800">"Last Name"</strong> (or a single <strong className="text-teal-800">"Name"</strong> column),
+          <strong className="text-teal-800"> "Client ID"</strong>,
+          <strong className="text-teal-800"> "Email"</strong>, and
+          <strong className="text-teal-800"> "Phone"</strong>.
           Existing patients (matched by name) will have their info updated rather than duplicated.
         </p>
         <div className="mt-3 bg-white rounded-xl p-3 border border-slate-200">
           <code className="text-[10px] text-slate-600 font-mono">
-            Full Name, Client ID, DOB<br/>
-            John Doe, CL-12345, 1990-05-15<br/>
-            Jane Smith, CL-67890, 1985-12-01
+            First Name, Last Name, Client ID, Email, Phone<br/>
+            John, Doe, CL-12345, john@email.com, (555) 123-4567<br/>
+            Jane, Smith, CL-67890, jane@email.com, (555) 987-6543
           </code>
         </div>
       </div>
