@@ -73,10 +73,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, onMfaRequired }) => {
     setOauthLoading(true);
 
     try {
+      const redirectTo =
+        window.location.hostname === 'intake.drz.services'
+          ? 'https://intake.drz.services/oauth/consent'
+          : `${window.location.origin}/oauth/consent`;
+
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo,
         },
       });
       if (error) throw error;

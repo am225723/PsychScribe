@@ -584,6 +584,7 @@ const App: React.FC = () => {
           <Route path="/safety" element={<SafetyProtocols />} />
           <Route path="/hipaa" element={<HipaaCompliance />} />
           <Route path="/support" element={<Support />} />
+          <Route path="/oauth/consent" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
