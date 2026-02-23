@@ -277,37 +277,60 @@ export async function mergePatients(primaryId: string, secondaryIds: string[]): 
 
 export async function importPatients(patients: { first_name: string; last_name: string; dob?: string; client_id?: string; email?: string; phone?: string }[]): Promise<number> {
   let imported = 0;
+  const errors: string[] = [];
+
   for (const p of patients) {
     const cleanFirst = p.first_name.replace(/\*+/g, '').trim();
     const cleanLast = p.last_name.replace(/\*+/g, '').trim();
     if (!cleanFirst && !cleanLast) continue;
 
-    const { data: existing } = await supabase
-      .from('patients')
-      .select('id')
-      .ilike('first_name', cleanFirst)
-      .ilike('last_name', cleanLast)
-      .limit(1);
+    try {
+      const { data: existing, error: selectError } = await supabase
+        .from('patients')
+        .select('id')
+        .ilike('first_name', cleanFirst)
+        .ilike('last_name', cleanLast)
+        .limit(1);
 
-    if (existing && existing.length > 0) {
-      const updates: Record<string, any> = { updated_at: new Date().toISOString() };
-      if (p.dob) updates.dob = p.dob;
-      if (p.client_id) updates.client_id = p.client_id;
-      if (p.email) updates.email = p.email;
-      if (p.phone) updates.phone = p.phone;
-      await supabase.from('patients').update(updates).eq('id', existing[0].id);
-    } else {
-      await supabase.from('patients').insert({
-        first_name: cleanFirst,
-        last_name: cleanLast,
-        initials: extractInitials(cleanFirst, cleanLast),
-        dob: p.dob || null,
-        client_id: p.client_id || null,
-        email: p.email || null,
-        phone: p.phone || null,
-      });
+      if (selectError) {
+        errors.push(`Lookup failed for ${cleanFirst} ${cleanLast}: ${selectError.message}`);
+        continue;
+      }
+
+      if (existing && existing.length > 0) {
+        const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+        if (p.dob) updates.dob = p.dob;
+        if (p.client_id) updates.client_id = p.client_id;
+        if (p.email) updates.email = p.email;
+        if (p.phone) updates.phone = p.phone;
+        const { error: updateError } = await supabase.from('patients').update(updates).eq('id', existing[0].id);
+        if (updateError) {
+          errors.push(`Update failed for ${cleanFirst} ${cleanLast}: ${updateError.message}`);
+          continue;
+        }
+      } else {
+        const { error: insertError } = await supabase.from('patients').insert({
+          first_name: cleanFirst,
+          last_name: cleanLast,
+          initials: extractInitials(cleanFirst, cleanLast),
+          dob: p.dob || null,
+          client_id: p.client_id || null,
+          email: p.email || null,
+          phone: p.phone || null,
+        });
+        if (insertError) {
+          errors.push(`Insert failed for ${cleanFirst} ${cleanLast}: ${insertError.message}`);
+          continue;
+        }
+      }
+      imported++;
+    } catch (err: any) {
+      errors.push(`${cleanFirst} ${cleanLast}: ${err.message}`);
     }
-    imported++;
+  }
+
+  if (errors.length > 0 && imported === 0) {
+    throw new Error(errors[0]);
   }
   return imported;
 }

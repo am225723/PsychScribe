@@ -253,6 +253,7 @@ export const PatientDatabase: React.FC = () => {
       setImportMessage(`Successfully imported ${count} patient${count !== 1 ? 's' : ''}.`);
       await loadPatients();
     } catch (err: any) {
+      console.error('CSV import error:', err);
       setImportMessage(`Import failed: ${err.message}`);
     } finally {
       setImporting(false);
