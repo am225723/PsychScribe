@@ -275,16 +275,30 @@ export async function mergePatients(primaryId: string, secondaryIds: string[]): 
   return { movedReports };
 }
 
-export async function importPatients(patients: { first_name: string; last_name: string; dob?: string; client_id?: string; email?: string; phone?: string }[]): Promise<number> {
-  let imported = 0;
-  const errors: string[] = [];
+export interface ImportResult {
+  imported: number;
+  updated: number;
+  skipped: number;
+  errors: { patient: string; message: string; code?: string }[];
+}
+
+export async function importPatients(patients: { first_name: string; last_name: string; dob?: string; client_id?: string; email?: string; phone?: string }[]): Promise<ImportResult> {
+  const result: ImportResult = { imported: 0, updated: 0, skipped: 0, errors: [] };
 
   for (const p of patients) {
     const cleanFirst = p.first_name.replace(/\*+/g, '').trim();
     const cleanLast = p.last_name.replace(/\*+/g, '').trim();
-    if (!cleanFirst && !cleanLast) continue;
+    const patientLabel = `${cleanFirst} ${cleanLast}`.trim() || '(empty name)';
+
+    if (!cleanFirst && !cleanLast) {
+      result.skipped++;
+      console.warn(`[Import] Skipped row: empty name`);
+      continue;
+    }
 
     try {
+      console.log(`[Import] Processing: ${patientLabel}`);
+
       const { data: existing, error: selectError } = await supabase
         .from('patients')
         .select('id')
@@ -293,7 +307,10 @@ export async function importPatients(patients: { first_name: string; last_name: 
         .limit(1);
 
       if (selectError) {
-        errors.push(`Lookup failed for ${cleanFirst} ${cleanLast}: ${selectError.message}`);
+        const msg = selectError.message || 'Unknown lookup error';
+        const code = (selectError as any).code || '';
+        console.error(`[Import] Lookup FAILED for ${patientLabel}:`, msg, code ? `(code: ${code})` : '');
+        result.errors.push({ patient: patientLabel, message: msg, code });
         continue;
       }
 
@@ -305,11 +322,16 @@ export async function importPatients(patients: { first_name: string; last_name: 
         if (p.phone) updates.phone = p.phone;
         const { error: updateError } = await supabase.from('patients').update(updates).eq('id', existing[0].id);
         if (updateError) {
-          errors.push(`Update failed for ${cleanFirst} ${cleanLast}: ${updateError.message}`);
+          const msg = updateError.message || 'Unknown update error';
+          const code = (updateError as any).code || '';
+          console.error(`[Import] Update FAILED for ${patientLabel}:`, msg, code ? `(code: ${code})` : '');
+          result.errors.push({ patient: patientLabel, message: msg, code });
           continue;
         }
+        console.log(`[Import] Updated existing: ${patientLabel}`);
+        result.updated++;
       } else {
-        const { error: insertError } = await supabase.from('patients').insert({
+        const insertData = {
           first_name: cleanFirst,
           last_name: cleanLast,
           initials: extractInitials(cleanFirst, cleanLast),
@@ -317,20 +339,31 @@ export async function importPatients(patients: { first_name: string; last_name: 
           client_id: p.client_id || null,
           email: p.email || null,
           phone: p.phone || null,
-        });
+        };
+        console.log(`[Import] Inserting new patient:`, JSON.stringify(insertData));
+        const { error: insertError } = await supabase.from('patients').insert(insertData);
         if (insertError) {
-          errors.push(`Insert failed for ${cleanFirst} ${cleanLast}: ${insertError.message}`);
+          const msg = insertError.message || 'Unknown insert error';
+          const code = (insertError as any).code || '';
+          console.error(`[Import] Insert FAILED for ${patientLabel}:`, msg, code ? `(code: ${code})` : '');
+          result.errors.push({ patient: patientLabel, message: msg, code });
           continue;
         }
+        console.log(`[Import] Inserted new: ${patientLabel}`);
+        result.imported++;
       }
-      imported++;
     } catch (err: any) {
-      errors.push(`${cleanFirst} ${cleanLast}: ${err.message}`);
+      const msg = err.message || 'Unexpected error';
+      console.error(`[Import] Exception for ${patientLabel}:`, msg);
+      result.errors.push({ patient: patientLabel, message: msg });
     }
   }
 
-  if (errors.length > 0 && imported === 0) {
-    throw new Error(errors[0]);
+  console.log(`[Import] Complete — imported: ${result.imported}, updated: ${result.updated}, skipped: ${result.skipped}, errors: ${result.errors.length}`);
+
+  if (result.errors.length > 0 && result.imported === 0 && result.updated === 0) {
+    throw new Error(`All ${result.errors.length} patient(s) failed. First error: ${result.errors[0].patient} — ${result.errors[0].message}${result.errors[0].code ? ` (${result.errors[0].code})` : ''}`);
   }
-  return imported;
+
+  return result;
 }

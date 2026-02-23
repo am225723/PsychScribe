@@ -249,11 +249,27 @@ export const PatientDatabase: React.FC = () => {
         return;
       }
 
-      const count = await importPatients(records);
-      setImportMessage(`Successfully imported ${count} patient${count !== 1 ? 's' : ''}.`);
+      console.log(`[CSV Import] Parsed ${records.length} records from CSV`);
+      console.log(`[CSV Import] Column mapping — firstNameIdx: ${firstNameIdx}, lastNameIdx: ${lastNameIdx}, fullNameIdx: ${fullNameIdx}, idIdx: ${idIdx}, dobIdx: ${dobIdx}, emailIdx: ${emailIdx}, phoneIdx: ${phoneIdx}`);
+      console.log(`[CSV Import] Header: ${JSON.stringify(header)}`);
+      console.log(`[CSV Import] First record:`, JSON.stringify(records[0]));
+
+      const result = await importPatients(records);
+      const parts: string[] = [];
+      if (result.imported > 0) parts.push(`${result.imported} new`);
+      if (result.updated > 0) parts.push(`${result.updated} updated`);
+      if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
+      if (result.errors.length > 0) parts.push(`${result.errors.length} failed`);
+
+      let msg = `Import complete: ${parts.join(', ')}.`;
+      if (result.errors.length > 0) {
+        const firstErr = result.errors[0];
+        msg += ` First error: ${firstErr.patient} — ${firstErr.message}${firstErr.code ? ` (${firstErr.code})` : ''}`;
+      }
+      setImportMessage(msg);
       await loadPatients();
     } catch (err: any) {
-      console.error('CSV import error:', err);
+      console.error('[CSV Import] Fatal error:', err);
       setImportMessage(`Import failed: ${err.message}`);
     } finally {
       setImporting(false);
