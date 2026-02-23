@@ -213,11 +213,21 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
       prev.map((job) => {
         if (job.jobId !== jobId) return job;
 
+        const taggedFiles = files.map((f) => ({
+          ...f,
+          docTypes: {
+            summary: job.steps.summary.enabled,
+            treatment: job.steps.treatment.enabled,
+            darp: job.steps.darp.enabled,
+            preceptor: job.steps.preceptor.enabled,
+          },
+        }));
+
         return {
           ...job,
           source: {
             ...job.source,
-            files: [...job.source.files, ...files],
+            files: [...job.source.files, ...taggedFiles],
             sourceName: firstFile.name,
           },
           patient: {
@@ -239,6 +249,20 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     updateJobSource(jobId, {
       files: jobs.find((job) => job.jobId === jobId)?.source.files.filter((_, i) => i !== index) || [],
     });
+  };
+
+  const toggleFileDocType = (jobId: string, fileIndex: number, docType: BatchDocType) => {
+    setJobs((prev) =>
+      prev.map((job) => {
+        if (job.jobId !== jobId) return job;
+        const updatedFiles = job.source.files.map((f, i) => {
+          if (i !== fileIndex) return f;
+          const current = f.docTypes || { summary: true, treatment: true, darp: true, preceptor: false };
+          return { ...f, docTypes: { ...current, [docType]: !current[docType] } };
+        });
+        return { ...job, source: { ...job.source, files: updatedFiles } };
+      }),
+    );
   };
 
   const toggleStepEnabled = (jobId: string, stepType: BatchDocType, enabled: boolean) => {
@@ -324,7 +348,11 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
     stepType: BatchDocType,
     outputs: Partial<Record<BatchDocType, string>>,
   ): Promise<string> => {
-    const filesAsInline = job.source.files.map((f) => ({ mimeType: f.mimeType, data: f.base64 }));
+    const filteredFiles = job.source.files.filter((f) => {
+      if (!f.docTypes) return true;
+      return (f.docTypes as any)[stepType] === true;
+    });
+    const filesAsInline = filteredFiles.map((f) => ({ mimeType: f.mimeType, data: f.base64 }));
     const hasText = Boolean(job.source.extractedText?.trim());
     const content = hasText ? (job.source.extractedText || '') : filesAsInline;
 
@@ -698,15 +726,48 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ onComplete }) 
                 </div>
 
                 {job.source.files.length > 0 && (
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {job.source.files.map((file, fileIndex) => (
-                      <div key={`${file.name}-${fileIndex}`} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
-                        <span className="text-xs font-bold text-teal-900 truncate">{file.name}</span>
-                        {!isRunning && (
-                          <button onClick={() => removeSourceFile(job.jobId, fileIndex)} className="text-red-400 hover:text-red-600">
-                            <i className="fa-solid fa-xmark"></i>
-                          </button>
-                        )}
+                      <div key={`${file.name}-${fileIndex}`} className="bg-slate-50 rounded-xl px-4 py-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="w-7 h-7 bg-teal-100 rounded-lg flex items-center justify-center shrink-0">
+                              <i className={`fa-solid ${file.mimeType.startsWith('audio/') ? 'fa-waveform' : file.mimeType.startsWith('image/') ? 'fa-image' : 'fa-file-pdf'} text-teal-700 text-[10px]`}></i>
+                            </div>
+                            <span className="text-xs font-bold text-teal-900 truncate">{file.name}</span>
+                          </div>
+                          {!isRunning && (
+                            <button onClick={() => removeSourceFile(job.jobId, fileIndex)} className="text-red-400 hover:text-red-600 p-1">
+                              <i className="fa-solid fa-xmark"></i>
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 pl-9">
+                          <span className="text-[9px] font-bold uppercase tracking-widest text-teal-800/30 mr-1">Use for:</span>
+                          {STEP_ORDER.map((dt) => {
+                            const isChecked = (file.docTypes as any)?.[dt] === true;
+                            const colors: Record<BatchDocType, { on: string; label: string }> = {
+                              summary: { on: 'bg-teal-50 border-teal-200 text-teal-700', label: 'Summary' },
+                              treatment: { on: 'bg-emerald-50 border-emerald-200 text-emerald-700', label: 'Treatment' },
+                              darp: { on: 'bg-sky-50 border-sky-200 text-sky-700', label: 'DARP' },
+                              preceptor: { on: 'bg-amber-50 border-amber-200 text-amber-700', label: 'Preceptor' },
+                            };
+                            return (
+                              <button
+                                key={dt}
+                                type="button"
+                                disabled={isRunning}
+                                onClick={() => toggleFileDocType(job.jobId, fileIndex, dt)}
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
+                                  isChecked ? colors[dt].on : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+                                }`}
+                              >
+                                <i className={`fa-solid ${isChecked ? 'fa-square-check' : 'fa-square'} text-[10px]`}></i>
+                                {colors[dt].label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     ))}
                   </div>

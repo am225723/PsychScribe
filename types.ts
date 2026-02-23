@@ -18,6 +18,7 @@ export interface FileData {
     summary: boolean;
     treatment: boolean;
     darp: boolean;
+    preceptor?: boolean;
   };
 }
 
