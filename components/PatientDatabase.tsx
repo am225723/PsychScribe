@@ -291,6 +291,22 @@ export const PatientDatabase: React.FC = () => {
             Add Patient
           </button>
           <button
+            onClick={() => {
+              const csv = 'First Name,Last Name,DOB,Email,Phone,Client ID\nJane,Doe,01/15/1990,jane@email.com,(555) 123-4567,CL-001\n';
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = 'patient_import_template.csv';
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="px-5 py-3 rounded-2xl bg-white text-slate-500 border border-slate-200 font-black text-xs uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2"
+          >
+            <i className="fa-solid fa-download"></i>
+            Template
+          </button>
+          <button
             onClick={() => csvInputRef.current?.click()}
             disabled={importing}
             className="px-5 py-3 rounded-2xl bg-white text-teal-700 border border-teal-200 font-black text-xs uppercase tracking-widest hover:bg-teal-50 transition-all flex items-center gap-2"
