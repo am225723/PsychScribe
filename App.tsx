@@ -130,11 +130,7 @@ const App: React.FC = () => {
 
     const checkMfa = async (): Promise<AuthState> => {
       try {
-        const factorsResult = await Promise.race([
-          supabase.auth.mfa.listFactors(),
-          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 4000)),
-        ]);
-        const factors = (factorsResult as any)?.data;
+        const { data: factors } = await supabase.auth.mfa.listFactors();
         const hasVerifiedTotp = factors?.totp?.some((f: any) => f.status === 'verified');
 
         if (!hasVerifiedTotp) {
@@ -145,14 +141,7 @@ const App: React.FC = () => {
           return 'mfa_challenge';
         }
 
-        const aalResult = await Promise.race([
-          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-          new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 4000)),
-        ]);
-        const aal = (aalResult as any)?.data;
-        if (aal?.currentLevel === 'aal1' && aal?.nextLevel === 'aal2') {
-          return 'mfa_challenge';
-        }
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
         if (aal?.currentLevel === 'aal2') {
           return 'authenticated';
         }
@@ -177,11 +166,8 @@ const App: React.FC = () => {
 
     const init = async () => {
       try {
-        const sessionResult = await Promise.race([
-          supabase.auth.getSession(),
-          new Promise<{ data: { session: null } }>((resolve) => setTimeout(() => resolve({ data: { session: null } }), 5000)),
-        ]);
-        const currentSession = (sessionResult as any)?.data?.session;
+        const { data: sessionData } = await supabase.auth.getSession();
+        const currentSession = sessionData?.session;
         initDone = true;
         await resolveAuth(currentSession);
       } catch {
@@ -189,7 +175,15 @@ const App: React.FC = () => {
         setAuthState('unauthenticated');
       }
     };
-    init();
+
+    const initTimeout = setTimeout(() => {
+      if (!initDone) {
+        initDone = true;
+        setAuthState('unauthenticated');
+      }
+    }, 8000);
+
+    init().finally(() => clearTimeout(initTimeout));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       if (_event === 'INITIAL_SESSION') return;
