@@ -23,6 +23,7 @@ type BatchStep = {
   progress: number;
   outputText?: string;
   error?: string;
+  darpOutputs?: { date: string; fileName: string; text: string }[];
 };
 
 type BatchJob = {
@@ -121,6 +122,27 @@ function extractDateFromFilename(filename: string): string | null {
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   const year = parseInt(yy, 10) + 2000;
   return `${year}-${mm}-${dd}`;
+}
+
+function getOldestDateFromFiles(files: FileData[]): string | null {
+  const dates: string[] = [];
+  for (const f of files) {
+    const d = extractDateFromFilename(f.name);
+    if (d) dates.push(d);
+  }
+  if (dates.length === 0) return null;
+  dates.sort();
+  return dates[0];
+}
+
+function getDarpFilesWithDates(files: FileData[]): { file: FileData; date: string }[] {
+  return files
+    .filter((f) => f.docTypes?.darp === true)
+    .map((f) => ({
+      file: f,
+      date: extractDateFromFilename(f.name) || '',
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 function getOverallJobStatus(job: BatchJob): BatchStepStatus {
@@ -597,11 +619,15 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
       ].join('\n');
     }
 
+    const darpFiles = getDarpFilesWithDates(job.source.files);
+    const oldestDate = getOldestDateFromFiles(job.source.files) || job.dateOfService || '';
+    const effectiveDate = (stepType === 'summary' || stepType === 'treatment') ? (oldestDate || job.dateOfService) : job.dateOfService;
+
     const metadata =
-      (stepType === 'treatment' || stepType === 'darp') && (job.clientId || job.dateOfService)
+      (stepType === 'treatment' || stepType === 'darp') && (job.clientId || effectiveDate)
         ? {
             clientId: job.clientId || undefined,
-            dateOfService: job.dateOfService || undefined,
+            dateOfService: effectiveDate || undefined,
           }
         : undefined;
 
@@ -612,6 +638,44 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
     updateStep(job.jobId, stepType, { progress: 90 });
 
     return text;
+  };
+
+  const runDarpPerFile = async (
+    job: BatchJob,
+    outputs: Partial<Record<BatchDocType, string>>,
+  ): Promise<{ combined: string; darpOutputs: { date: string; fileName: string; text: string }[] }> => {
+    const darpFiles = getDarpFilesWithDates(job.source.files);
+    const context = buildCarryForwardContext('darp', outputs);
+    const results: { date: string; fileName: string; text: string }[] = [];
+
+    if (darpFiles.length === 0) {
+      updateStep(job.jobId, 'darp', { status: 'running', progress: 10 });
+      const text = await analyzeIntake(
+        job.source.extractedText?.trim() ? job.source.extractedText : [],
+        'darp',
+        { clientId: job.clientId || undefined, dateOfService: job.dateOfService || undefined },
+        context || undefined,
+      );
+      return { combined: text, darpOutputs: [{ date: job.dateOfService || '', fileName: 'Manual Input', text }] };
+    }
+
+    for (let i = 0; i < darpFiles.length; i++) {
+      const { file, date } = darpFiles[i];
+      const progressBase = Math.round((i / darpFiles.length) * 90) + 5;
+      updateStep(job.jobId, 'darp', { status: 'running', progress: progressBase });
+
+      const fileContent = [{ mimeType: file.mimeType, data: file.base64 }];
+      const metadata = {
+        clientId: job.clientId || undefined,
+        dateOfService: date || job.dateOfService || undefined,
+      };
+
+      const text = await analyzeIntake(fileContent, 'darp', metadata, context || undefined);
+      results.push({ date: date || job.dateOfService || '', fileName: file.name, text });
+    }
+
+    const combined = results.map((r) => `--- DARP NOTE: ${r.fileName} (${r.date || 'No Date'}) ---\n\n${r.text}`).join('\n\n\n');
+    return { combined, darpOutputs: results };
   };
 
   const processBatch = async () => {
@@ -660,75 +724,115 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
         if (!job.steps[stepType].enabled) continue;
 
         try {
-          const outputText = await runSingleStep(job, stepType, stepOutputs);
-          stepOutputs[stepType] = outputText;
+          if (stepType === 'darp') {
+            const { combined, darpOutputs } = await runDarpPerFile(job, stepOutputs);
+            stepOutputs[stepType] = combined;
 
-          if (stepType !== 'preceptor') {
-            const patientName = extractPatientNameFromText(outputText, job.patient.firstInitial, job.patient.lastName);
-            const clientIdMatch = outputText.match(/CLIENT_ID:\s*(.*)/i);
-            const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : job.clientId || undefined;
-            const dobMatch = outputText.match(/DOB:\s*(.*)/i);
-            const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
-
-            try {
-              const patient = await findOrCreatePatient(patientName, dob, clientId);
-              await saveReport(patient.id, stepType, outputText, outputText.includes('🚨'));
-            } catch (saveError) {
-              console.error('Failed to save report to database (continuing batch):', saveError);
-            }
-          }
-
-          updateStep(job.jobId, stepType, {
-            status: 'done',
-            progress: 100,
-            outputText,
-            error: undefined,
-          });
-
-          if (job.driveFolderId && stepType !== 'preceptor') {
-            const dateStr = job.dateOfService || new Date().toISOString().split('T')[0];
-            const patientLabel = `${job.patient.firstInitial}${job.patient.lastName ? '_' + job.patient.lastName : ''}`;
-            const docLabel = stepType === 'summary' ? 'CaseSummary' : stepType === 'treatment' ? 'TreatmentPlan' : 'SessionNote';
-            const driveFileName = `${patientLabel}_${docLabel}_${dateStr}.txt`;
-            try {
-              const saved = await saveToDriveFolder(job.driveFolderId, driveFileName, outputText);
-              if (saved) {
-                console.log(`[Batch] Auto-saved ${driveFileName} to Drive folder ${job.driveFolderName}`);
-              }
-            } catch (driveErr) {
-              console.error('Drive auto-save failed (continuing batch):', driveErr);
-            }
-          }
-
-          if (stepType === 'summary' || stepType === 'treatment') {
-            const generatedFile: FileData = {
-              name: stepType === 'summary' ? 'Generated Case Summary.txt' : 'Generated Treatment Plan.txt',
-              mimeType: 'text/plain',
-              base64: btoa(unescape(encodeURIComponent(outputText))),
-              docTypes: {
-                summary: false,
-                treatment: stepType === 'summary',
-                darp: stepType === 'treatment',
-                preceptor: false,
-              },
-            };
-
-            setJobs((prev) =>
-              prev.map((j) => {
-                if (j.jobId !== job.jobId) return j;
-                const alreadyHas = j.source.files.some((f) => f.name === generatedFile.name);
-                if (alreadyHas) return j;
-                return {
-                  ...j,
-                  source: {
-                    ...j.source,
-                    files: [...j.source.files, generatedFile],
-                  },
-                };
-              }),
+            const patientName = extractPatientNameFromText(
+              darpOutputs[0]?.text || combined,
+              job.patient.firstInitial,
+              job.patient.lastName,
             );
+            const clientId = job.clientId || undefined;
 
-            job.source.files = [...job.source.files, generatedFile];
+            for (const darpOut of darpOutputs) {
+              try {
+                const patient = await findOrCreatePatient(patientName, undefined, clientId);
+                await saveReport(patient.id, 'darp', darpOut.text, darpOut.text.includes('🚨'));
+              } catch (saveError) {
+                console.error('Failed to save DARP to database (continuing batch):', saveError);
+              }
+
+              if (job.driveFolderId) {
+                const dateStr = darpOut.date || new Date().toISOString().split('T')[0];
+                const patientLabel = `${job.patient.firstInitial}${job.patient.lastName ? '_' + job.patient.lastName : ''}`;
+                const driveFileName = `${patientLabel}_SessionNote_${dateStr}.txt`;
+                try {
+                  const saved = await saveToDriveFolder(job.driveFolderId, driveFileName, darpOut.text);
+                  if (saved) console.log(`[Batch] Auto-saved ${driveFileName} to Drive folder ${job.driveFolderName}`);
+                } catch (driveErr) {
+                  console.error('Drive auto-save failed (continuing batch):', driveErr);
+                }
+              }
+            }
+
+            updateStep(job.jobId, 'darp', {
+              status: 'done',
+              progress: 100,
+              outputText: combined,
+              error: undefined,
+              darpOutputs,
+            });
+          } else {
+            const outputText = await runSingleStep(job, stepType, stepOutputs);
+            stepOutputs[stepType] = outputText;
+
+            if (stepType !== 'preceptor') {
+              const patientName = extractPatientNameFromText(outputText, job.patient.firstInitial, job.patient.lastName);
+              const clientIdMatch = outputText.match(/CLIENT_ID:\s*(.*)/i);
+              const clientId = clientIdMatch ? clientIdMatch[1].trim().replace(/\*+/g, '') : job.clientId || undefined;
+              const dobMatch = outputText.match(/DOB:\s*(.*)/i);
+              const dob = dobMatch ? dobMatch[1].trim().replace(/\*+/g, '') : undefined;
+
+              try {
+                const patient = await findOrCreatePatient(patientName, dob, clientId);
+                await saveReport(patient.id, stepType, outputText, outputText.includes('🚨'));
+              } catch (saveError) {
+                console.error('Failed to save report to database (continuing batch):', saveError);
+              }
+            }
+
+            updateStep(job.jobId, stepType, {
+              status: 'done',
+              progress: 100,
+              outputText,
+              error: undefined,
+            });
+
+            if (job.driveFolderId && stepType !== 'preceptor') {
+              const oldestDate = getOldestDateFromFiles(job.source.files);
+              const dateStr = oldestDate || job.dateOfService || new Date().toISOString().split('T')[0];
+              const patientLabel = `${job.patient.firstInitial}${job.patient.lastName ? '_' + job.patient.lastName : ''}`;
+              const docLabel = stepType === 'summary' ? 'CaseSummary' : 'TreatmentPlan';
+              const driveFileName = `${patientLabel}_${docLabel}_${dateStr}.txt`;
+              try {
+                const saved = await saveToDriveFolder(job.driveFolderId, driveFileName, outputText);
+                if (saved) console.log(`[Batch] Auto-saved ${driveFileName} to Drive folder ${job.driveFolderName}`);
+              } catch (driveErr) {
+                console.error('Drive auto-save failed (continuing batch):', driveErr);
+              }
+            }
+
+            if (stepType === 'summary' || stepType === 'treatment') {
+              const generatedFile: FileData = {
+                name: stepType === 'summary' ? 'Generated Case Summary.txt' : 'Generated Treatment Plan.txt',
+                mimeType: 'text/plain',
+                base64: btoa(unescape(encodeURIComponent(outputText))),
+                docTypes: {
+                  summary: false,
+                  treatment: stepType === 'summary',
+                  darp: stepType === 'treatment',
+                  preceptor: false,
+                },
+              };
+
+              setJobs((prev) =>
+                prev.map((j) => {
+                  if (j.jobId !== job.jobId) return j;
+                  const alreadyHas = j.source.files.some((f) => f.name === generatedFile.name);
+                  if (alreadyHas) return j;
+                  return {
+                    ...j,
+                    source: {
+                      ...j.source,
+                      files: [...j.source.files, generatedFile],
+                    },
+                  };
+                }),
+              );
+
+              job.source.files = [...job.source.files, generatedFile];
+            }
           }
         } catch (error: any) {
           jobFailed = true;
@@ -1091,11 +1195,17 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
                 {STEP_ORDER.map((stepType) => {
                   const step = job.steps[stepType];
                   const disabled = !step.enabled;
+                  const darpCount = stepType === 'darp' ? getDarpFilesWithDates(job.source.files).length : 0;
 
                   return (
                     <div key={stepType} className="bg-slate-50 rounded-xl p-3 border border-teal-50">
                       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider mb-2">
-                        <span className="text-teal-800">{STEP_LABEL[stepType]}</span>
+                        <span className="text-teal-800">
+                          {STEP_LABEL[stepType]}
+                          {stepType === 'darp' && darpCount > 1 && !disabled && (
+                            <span className="ml-1 text-sky-600">({darpCount} notes)</span>
+                          )}
+                        </span>
                         <span className="text-teal-700">{disabled ? '—' : `${step.progress}%`}</span>
                       </div>
                       <div className="h-2 bg-white rounded-full border border-teal-50 overflow-hidden">
@@ -1108,10 +1218,37 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
                         {disabled ? 'Disabled' : step.status}
                         {step.error ? ` • ${step.error}` : ''}
                       </div>
+                      {stepType === 'darp' && step.darpOutputs && step.darpOutputs.length > 1 && step.status === 'done' && (
+                        <div className="mt-2 space-y-1">
+                          {step.darpOutputs.map((d, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-[9px] font-bold text-sky-700">
+                              <i className="fa-solid fa-check-circle text-emerald-500"></i>
+                              <span className="truncate">{d.fileName}</span>
+                              {d.date && <span className="text-sky-500 shrink-0">{d.date}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
+
+              {(() => {
+                const darpFiles = getDarpFilesWithDates(job.source.files);
+                const oldestDate = getOldestDateFromFiles(job.source.files);
+                if (darpFiles.length > 0 && oldestDate) {
+                  return (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-sky-50 rounded-xl">
+                      <i className="fa-solid fa-calendar-check text-sky-600 text-sm"></i>
+                      <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider">
+                        {darpFiles.length} DARP note{darpFiles.length !== 1 ? 's' : ''} detected — Summary/Treatment will use oldest date ({oldestDate})
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           );
         })}
