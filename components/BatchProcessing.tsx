@@ -112,6 +112,17 @@ function splitPatientName(name: string): { firstInitial: string; lastName: strin
   return { firstInitial, lastName };
 }
 
+function extractDateFromFilename(filename: string): string | null {
+  const match = filename.match(/^(\d{2})(\d{2})(\d{2})\b/);
+  if (!match) return null;
+  const [, mm, dd, yy] = match;
+  const month = parseInt(mm, 10);
+  const day = parseInt(dd, 10);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const year = parseInt(yy, 10) + 2000;
+  return `${year}-${mm}-${dd}`;
+}
+
 function getOverallJobStatus(job: BatchJob): BatchStepStatus {
   const enabledSteps = STEP_ORDER.filter((step) => job.steps[step].enabled);
   if (enabledSteps.length === 0) return 'queued';
@@ -245,6 +256,11 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
 
     if (downloadedFiles.length > 0) {
       const guessed = splitPatientName(currentFolderName.replace(/[_-]+/g, ' '));
+      let detectedDate: string | null = null;
+      for (const file of driveFiles) {
+        const d = extractDateFromFilename(file.name);
+        if (d) { detectedDate = d; break; }
+      }
 
       setJobs((prev) =>
         prev.map((job) => {
@@ -269,6 +285,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
             },
             driveFolderId: currentFolderId,
             driveFolderName: currentFolderName,
+            dateOfService: job.dateOfService || detectedDate || '',
           };
         }),
       );
@@ -282,6 +299,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
     setDriveDownloading(fileId);
     const result = await downloadDriveFile(fileId, fileName, mimeType);
     if (result) {
+      const detectedDate = extractDateFromFilename(fileName);
       setJobs((prev) =>
         prev.map((job) => {
           if (job.jobId !== jobId) return job;
@@ -301,6 +319,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
             source: { ...job.source, files: [...job.source.files, taggedFile] },
             driveFolderId: job.driveFolderId || currentFolderId,
             driveFolderName: job.driveFolderName || currentFolderName,
+            dateOfService: job.dateOfService || detectedDate || '',
           };
         }),
       );
@@ -395,6 +414,12 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
     const firstFile = selectedFiles[0];
     const guessed = splitPatientName(firstFile.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '));
 
+    let detectedDate: string | null = null;
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const d = extractDateFromFilename(selectedFiles[i].name);
+      if (d) { detectedDate = d; break; }
+    }
+
     setJobs((prev) =>
       prev.map((job) => {
         if (job.jobId !== jobId) return job;
@@ -422,6 +447,7 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
             lastName: job.patient.lastName || guessed.lastName,
             folderName: job.patient.folderName || (guessed.lastName ? `${guessed.lastName}_${guessed.firstInitial || 'X'}` : ''),
           },
+          dateOfService: job.dateOfService || detectedDate || '',
         };
       }),
     );
@@ -935,8 +961,15 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
                     value={job.dateOfService || ''}
                     onChange={(e) => updateJob(job.jobId, { dateOfService: e.target.value })}
                     disabled={isRunning}
-                    className="w-full px-3 py-2 rounded-xl border border-teal-100 text-sm font-bold text-teal-900"
+                    className={`w-full px-3 py-2 rounded-xl border text-sm font-bold text-teal-900 ${
+                      job.dateOfService && job.source.files.some((f) => extractDateFromFilename(f.name) === job.dateOfService)
+                        ? 'border-emerald-300 bg-emerald-50/30'
+                        : 'border-teal-100'
+                    }`}
                   />
+                  {job.dateOfService && job.source.files.some((f) => extractDateFromFilename(f.name) === job.dateOfService) && (
+                    <p className="text-[9px] font-bold text-emerald-600 mt-1"><i className="fa-solid fa-wand-magic-sparkles mr-1"></i>Auto-detected from filename</p>
+                  )}
                 </div>
               </div>
 
