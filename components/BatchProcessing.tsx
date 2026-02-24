@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
 import { FileData } from '../types';
 import {
   analyzeIntake,
@@ -352,15 +353,36 @@ export const BatchProcessing: React.FC<BatchProcessingProps> = ({ accessToken, o
   const saveToDriveFolder = async (folderId: string, fileName: string, content: string): Promise<boolean> => {
     if (!accessToken) return false;
     try {
-      const blob = new Blob([content], { type: 'text/plain' });
+      const pdfName = fileName.replace(/\.txt$/, '.pdf');
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 15;
+      const maxWidth = pageWidth - margin * 2;
+      const lineHeight = 5;
+      let y = margin;
+
+      const lines = doc.splitTextToSize(content, maxWidth);
+      for (const line of lines) {
+        if (y + lineHeight > doc.internal.pageSize.getHeight() - margin) {
+          doc.addPage();
+          y = margin;
+        }
+        const isBold = /^\*\*.*\*\*$/.test(line.trim()) || /^#{1,3}\s/.test(line.trim()) || /^---/.test(line.trim());
+        doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+        doc.setFontSize(isBold ? 11 : 10);
+        doc.text(line, margin, y);
+        y += lineHeight;
+      }
+
+      const pdfBlob = doc.output('blob');
       const metadata = {
-        name: fileName,
-        mimeType: 'text/plain',
+        name: pdfName,
+        mimeType: 'application/pdf',
         parents: [folderId],
       };
       const formData = new FormData();
       formData.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-      formData.append('file', blob);
+      formData.append('file', pdfBlob);
       const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + accessToken },
